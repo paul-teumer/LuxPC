@@ -150,5 +150,13 @@ class Settings:
         for listener in list(self._listeners):
             listener()
 
+    def reset(self) -> None:
+        """Stellt alle Einstellungen außer dem Ein/Aus-Schalter auf die Standardwerte."""
+        with self._lock:
+            self._data = SettingsData(enabled=self._data.enabled)
+        self.save()
+        for listener in list(self._listeners):
+            listener()
+
     def subscribe(self, listener: Callable[[], None]) -> None:
         self._listeners.append(listener)

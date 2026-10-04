@@ -80,3 +80,12 @@ def test_default_calibration_points_form_a_sigmoid():
     steps = [b - a for a, b in zip(percents, percents[1:])]
     assert max(steps) in steps[2:4] and steps[0] < max(steps) > steps[-1]
     assert sanitize(SettingsData()).calibration_points == points
+
+
+def test_reset_restores_defaults_but_keeps_enabled(tmp_path):
+    path = tmp_path / "settings.json"
+    settings = Settings(path)
+    settings.update(enabled=False, hysteresis_percent=9, calibration_points=[[0, 1], [5, 50]])
+    settings.reset()
+    data = Settings(path).snapshot()
+    assert data == SettingsData(enabled=False)

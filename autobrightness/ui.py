@@ -42,6 +42,7 @@ MAX_INTERVAL_S = 86400
 MIN_GRAPH_SAMPLES = 60
 CURVE_MARGIN_LEFT, CURVE_MARGIN_TOP, CURVE_MARGIN_RIGHT, CURVE_MARGIN_BOTTOM = 12, 10, 40, 22
 POINT_GRAB_RADIUS = 10
+RESET_CONFIRM_MS = 3000
 AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
 
@@ -119,6 +120,8 @@ class SettingsWindow(customtkinter.CTk):
             self.update_idletasks()
             apply_window_icon(ctypes.windll.user32.GetParent(self.winfo_id()), icon_path)
 
+        self._slider_refreshers: list[Callable] = []
+        self._reset_confirm_job = None
         self._build()
         self.after(REFRESH_MS, self._refresh)
 
@@ -183,6 +186,9 @@ class SettingsWindow(customtkinter.CTk):
                 text_color=TEXT_COLOR, dropdown_text_color=TEXT_COLOR,
             )
             menu.set(data.monitor if data.monitor in monitors else AUTO_MONITOR_LABEL)
+            self._slider_refreshers.append(
+                lambda current: menu.set(current.monitor if current.monitor in monitors else AUTO_MONITOR_LABEL)
+            )
             menu.pack(side="right")
 
         screen = self._card("Bildschirm", add_monitor_menu)
@@ -430,10 +436,15 @@ class SettingsWindow(customtkinter.CTk):
         self._autostart_switch.pack(side="left", padx=16, pady=11)
         if startup.is_enabled():
             self._autostart_switch.select()
+        self._reset_button = customtkinter.CTkButton(
+            row, text="Zurücksetzen", width=100, height=28, corner_radius=8, font=_font(12, "bold"),
+            fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR, command=self._reset_settings,
+        )
+        self._reset_button.pack(side="right", padx=(0, 16))
         customtkinter.CTkButton(
             row, text="Beenden", width=84, height=28, corner_radius=8, font=_font(12, "bold"),
             fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR, command=self._on_quit,
-        ).pack(side="right", padx=16)
+        ).pack(side="right")
 
     def _add_slider(self, parent, key, label, minimum, maximum, data, formatter, steps, logarithmic=False) -> None:
         """Bei logarithmic=True läuft der Regler exponentiell, damit kleine und große Werte fein einstellbar sind."""
@@ -469,7 +480,35 @@ class SettingsWindow(customtkinter.CTk):
         )
         slider.set(to_position(getattr(data, key)))
         slider.grid(row=0, column=1, sticky="ew", padx=8)
+
+        def refresh(current) -> None:
+            slider.set(to_position(getattr(current, key)))
+            value_label.configure(text=formatter(getattr(current, key)))
+
+        self._slider_refreshers.append(refresh)
         customtkinter.CTkFrame(parent, height=0, fg_color="transparent").pack(pady=(0, 3))
+
+    def _reset_settings(self) -> None:
+        """Erster Klick fordert Bestätigung an, ein zweiter innerhalb weniger Sekunden setzt zurück."""
+        if self._reset_confirm_job is None:
+            self._reset_button.configure(text="Sicher?", fg_color=DANGER, hover_color=DANGER, text_color="#FFFFFF")
+            self._reset_confirm_job = self.after(RESET_CONFIRM_MS, self._cancel_reset_confirmation)
+            return
+        self._cancel_reset_confirmation()
+        for job in self._pending_saves.values():
+            self.after_cancel(job)
+        self._pending_saves.clear()
+        self._settings.reset()
+        data = self._settings.snapshot()
+        for refresh in self._slider_refreshers:
+            refresh(data)
+        self._point_percent_touched = False
+
+    def _cancel_reset_confirmation(self) -> None:
+        if self._reset_confirm_job is not None:
+            self.after_cancel(self._reset_confirm_job)
+            self._reset_confirm_job = None
+        self._reset_button.configure(text="Zurücksetzen", fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR)
 
     # ----- Einstellungen schreiben -----
 
