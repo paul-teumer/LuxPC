@@ -225,6 +225,7 @@ class SettingsWindow(customtkinter.CTk):
 
         self._graph = tk.Canvas(live, height=64, highlightthickness=0, bd=0)
         self._graph.pack(fill="x", padx=16, pady=(8, 4))
+        self._graph_key = None
         legend = customtkinter.CTkFrame(live, fg_color="transparent")
         legend.pack(fill="x", padx=16, pady=(0, 12))
         for text, color in (("Umgebungslicht", AMBIENT_LINE), ("Bildschirm", BRIGHTNESS_LINE)):
@@ -238,6 +239,7 @@ class SettingsWindow(customtkinter.CTk):
         self._curve = tk.Canvas(card, height=180, highlightthickness=0, bd=0)
         self._curve.pack(fill="x", padx=16, pady=(0, 6))
         self._dragged_point: Optional[int] = None
+        self._curve_key = None
         self._curve.bind("<Button-1>", self._on_curve_press)
         self._curve.bind("<B1-Motion>", self._on_curve_drag)
         self._curve.bind("<ButtonRelease-1>", lambda event: setattr(self, "_dragged_point", None))
@@ -334,6 +336,7 @@ class SettingsWindow(customtkinter.CTk):
         exposure_value, percent = self._curve_position(event.x, event.y, data)
         points = [point for point in data.calibration_points if abs(point[0] - exposure_value) >= MIN_POINT_DISTANCE]
         self._settings.update(calibration_points=points + [[exposure_value, percent]])
+        self._draw_curve(self._settings.snapshot())
 
     def _on_curve_drag(self, event) -> None:
         """Verschiebt den gegriffenen Punkt, ohne die Reihenfolge der Punkte zu verändern."""
@@ -347,6 +350,7 @@ class SettingsWindow(customtkinter.CTk):
         upper = points[index + 1][0] - MIN_POINT_DISTANCE if index < len(points) - 1 else EXPOSURE_VALUE_RANGE[1]
         points[index] = [max(lower, min(upper, exposure_value)), percent]
         self._settings.update(calibration_points=points)
+        self._draw_curve(self._settings.snapshot())
 
     def _update_point_list(self, points) -> None:
         if points == self._listed_points:
@@ -372,6 +376,12 @@ class SettingsWindow(customtkinter.CTk):
 
     def _draw_curve(self, data) -> None:
         low, high, width, height = self._curve_geometry(data)
+        current = self._service.status.exposure_value
+        key = (width, height, low, high, current, data.min_brightness_percent, data.max_brightness_percent,
+               data.brightness_offset_percent, tuple(map(tuple, data.calibration_points)), _color(GRAPH_BACKGROUND))
+        if key == self._curve_key:
+            return
+        self._curve_key = key
         painter = Painter(width, height, _color(GRAPH_BACKGROUND))
 
         left, top, right, bottom = _curve_plot_area(width, height)
@@ -399,7 +409,6 @@ class SettingsWindow(customtkinter.CTk):
             curve += [x_of(exposure_value), y_of(mapping.target_brightness(exposure_value, data))]
         painter.line(curve, _color(BRIGHTNESS_LINE), 2)
 
-        current = self._service.status.exposure_value
         if current is not None:
             x, y = x_of(current), y_of(mapping.target_brightness(current, data))
             painter.dashed_line((x, y_of(100)), (x, y_of(0)), _color(AMBIENT_LINE), 1, 3)
@@ -548,10 +557,15 @@ class SettingsWindow(customtkinter.CTk):
 
     def _draw_graph(self, data) -> None:
         width, height = max(self._graph.winfo_width(), 50), max(self._graph.winfo_height(), 50)
+        history = list(self._service.history)
+        key = (width, height, history[0][0] if history else None, history[-1][0] if history else None,
+               data.calibration_points[0][0], data.calibration_points[-1][0], _color(GRAPH_BACKGROUND))
+        if key == self._graph_key:
+            return
+        self._graph_key = key
         painter = Painter(width, height, _color(GRAPH_BACKGROUND))
         for fraction in (0.25, 0.5, 0.75):
             painter.line([0, height * fraction, width, height * fraction], _color(GRAPH_GRID))
-        history = list(self._service.history)
         if len(history) >= 2:
             low = min(data.calibration_points[0][0], min(entry[1] for entry in history)) - 0.5
             high = max(data.calibration_points[-1][0], max(entry[1] for entry in history)) + 0.5

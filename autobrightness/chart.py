@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import math
 import tkinter as tk
+from functools import lru_cache
 from typing import Sequence
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 SUPERSAMPLING = 4
 FONT_FILE = "segoeui.ttf"
+
+
+@lru_cache(maxsize=None)
+def _font(size: int) -> ImageFont.ImageFont:
+    try:
+        return ImageFont.truetype(FONT_FILE, size)
+    except OSError:
+        return ImageFont.load_default()
 
 
 class Painter:
@@ -48,11 +57,7 @@ class Painter:
         self._draw.ellipse(scaled, fill=fill, outline=outline, width=round(width * SUPERSAMPLING))
 
     def text(self, x: float, y: float, text: str, color: str, size: int, anchor: str = "la") -> None:
-        try:
-            font = ImageFont.truetype(FONT_FILE, size * SUPERSAMPLING)
-        except OSError:
-            font = ImageFont.load_default()
-        self._draw.text((x * SUPERSAMPLING, y * SUPERSAMPLING), text, fill=color, font=font, anchor=anchor)
+        self._draw.text((x * SUPERSAMPLING, y * SUPERSAMPLING), text, fill=color, font=_font(size * SUPERSAMPLING), anchor=anchor)
 
     def show(self, canvas: tk.Canvas) -> None:
         image = self._image.resize((self.width, self.height), Image.LANCZOS)
