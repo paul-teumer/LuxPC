@@ -5,7 +5,6 @@ Dieselbe Zeichnung dient für Fenster, Infobereich und die EXE-Datei (write_ico)
 
 from __future__ import annotations
 
-import base64
 import io
 import math
 import ctypes
@@ -83,16 +82,11 @@ def _render_canvas(canvas: int, small: bool) -> Image.Image:
     return image
 
 
-def render_icon(size: int = 64, png_base64: bool = False):
-    """PIL-Bild des Symbols; mit png_base64=True als Base64-PNG-Text (für tkinter.PhotoImage)."""
+def render_icon(size: int = 64) -> Image.Image:
+    """PIL-Bild des Symbols in exakt der angegebenen Pixelgröße."""
     supersampling = 8 if size <= SMALL_ICON_LIMIT else 4
     image = _render_canvas(size * supersampling, small=size <= SMALL_ICON_LIMIT)
-    image = image.resize((size, size), Image.LANCZOS)
-    if not png_base64:
-        return image
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode("ascii")
+    return image.resize((size, size), Image.LANCZOS)
 
 
 def write_ico(path: Path) -> None:

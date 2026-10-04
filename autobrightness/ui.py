@@ -129,7 +129,6 @@ class SettingsWindow(customtkinter.CTk):
         self._build()
         self.after(REFRESH_MS, self._refresh)
 
-    # ----- Aufbau -----
 
     def _card(self, title: Optional[str], trailing: Optional[Callable[[customtkinter.CTkFrame], None]] = None) -> customtkinter.CTkFrame:
         card = customtkinter.CTkFrame(
@@ -514,7 +513,6 @@ class SettingsWindow(customtkinter.CTk):
             self._reset_confirm_job = None
         self._reset_button.configure(text="Zurücksetzen", fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR)
 
-    # ----- Einstellungen schreiben -----
 
     def _schedule_save(self, key: str, value: float) -> None:
         current = getattr(self._settings.snapshot(), key)
@@ -538,7 +536,6 @@ class SettingsWindow(customtkinter.CTk):
     def _select_monitor(self, choice: str) -> None:
         self._settings.update(monitor=None if choice == AUTO_MONITOR_LABEL else choice)
 
-    # ----- Fenstersteuerung (threadsicher über Warteschlange) -----
 
     def post(self, command: Callable[[], None]) -> None:
         self._commands.put(command)
@@ -566,7 +563,6 @@ class SettingsWindow(customtkinter.CTk):
         else:
             self._enabled_switch.deselect()
 
-    # ----- Live-Anzeige -----
 
     def _refresh(self) -> None:
         while True:

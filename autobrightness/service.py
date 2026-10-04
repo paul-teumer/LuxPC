@@ -21,7 +21,7 @@ HISTORY_LENGTH = 240
 
 @dataclass(frozen=True)
 class Status:
-    state: str = "starting"  # starting | running | disabled | busy | error
+    state: str = "starting"  # starting | running | disabled | busy (Kamera belegt) | error
     message: str = ""
     exposure_value: Optional[float] = None
     raw_exposure_value: Optional[float] = None
@@ -33,6 +33,12 @@ class Status:
 
 
 class BrightnessService:
+    """Regelkreis in eigenem Thread: misst selten (Kamera), glättet und stellt die Helligkeit in kleinen Schritten nach.
+
+    Die Messung läuft in einem Arbeitsthread, damit die Helligkeitsrampe währenddessen weiterläuft.
+    Hardwarezugriffe sind injizierbar, sodass der Dienst ohne Kamera und Bildschirm testbar ist.
+    """
+
     def __init__(
         self,
         settings: Settings,
@@ -116,6 +122,7 @@ class BrightnessService:
             camera.close()
 
     def _run(self) -> None:
+        """Ein Durchlauf pro Takt: Nachtlicht angleichen, fällige Messung anstoßen, Ergebnis übernehmen, Rampe um einen Schritt weiterführen."""
         camera: Optional[ExposureMeterCamera] = None
         camera_index: Optional[int] = None
         smoother = mapping.ExposureValueSmoother()

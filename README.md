@@ -20,6 +20,16 @@ Die Einstellungen liegen in `%APPDATA%\AutoBrightness\settings.json`.
 
 ## Für Entwickler
 
+| Modul | Aufgabe |
+|---|---|
+| `service` | Regelkreis: Messung, Glättung, Helligkeitsrampe |
+| `camera`, `metering`, `dshow` | Webcam als Belichtungsmesser (Belichtungswert in EV) |
+| `camera_usage` | Erkennt, ob ein anderes Programm die Kamera nutzt |
+| `mapping` | Kalibrierkurve, Glättung, Rampe |
+| `config` | Einstellungen und Kalibrierpunkte (JSON) |
+| `ui`, `chart`, `icon`, `app` | Fenster, Diagramme, Symbol, Programmstart mit Infobereich-Symbol |
+
+
 ```powershell
 pip install -r requirements-dev.txt
 python main.pyw      # direkt starten

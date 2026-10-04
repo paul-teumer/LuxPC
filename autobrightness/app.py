@@ -46,7 +46,7 @@ def main() -> int:
     menu = pystray.Menu(
         pystray.MenuItem("Einstellungen öffnen", lambda: window.post(window.show), default=True),
         pystray.MenuItem(
-            "Automatik aktiv", lambda: toggle_enabled(), checked=lambda item: settings.snapshot().enabled
+            "Automatik aktiv", toggle_enabled, checked=lambda item: settings.snapshot().enabled
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Beenden", lambda: window.post(quit_application)),
