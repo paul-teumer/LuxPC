@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import math
 import queue
+import tempfile
 import tkinter as tk
+from pathlib import Path
 from typing import Callable, Optional
 
 import customtkinter
 
 from . import __version__, display, startup
 from .config import Settings
-from .icon import render_icon
+from .icon import write_ico
 from .service import BrightnessService, Status
 
 FONT_FAMILY = "Segoe UI"
@@ -99,19 +101,25 @@ class SettingsWindow(customtkinter.CTk):
         self.geometry("470x650")
         self.minsize(430, 360)
         self.protocol("WM_DELETE_WINDOW", self.hide)
-        self._icon_image = tk.PhotoImage(master=self, data=render_icon(64, png_base64=True))
-        self.iconphoto(True, self._icon_image)
+        # Ein eigenes Fenstersymbol verhindert, dass CustomTkinter sein blaues Standardsymbol setzt.
+        with tempfile.TemporaryDirectory() as folder:
+            icon_path = Path(folder) / "AutoBrightness.ico"
+            write_ico(icon_path)
+            self.iconbitmap(str(icon_path))
 
         self._build()
         self.after(REFRESH_MS, self._refresh)
 
     # ----- Aufbau -----
 
-    def _card(self, title: str, trailing: Optional[Callable[[customtkinter.CTkFrame], None]] = None) -> customtkinter.CTkFrame:
+    def _card(self, title: Optional[str], trailing: Optional[Callable[[customtkinter.CTkFrame], None]] = None) -> customtkinter.CTkFrame:
         card = customtkinter.CTkFrame(
             self._body, fg_color=CARD_COLOR, corner_radius=14, border_width=1, border_color=CARD_BORDER
         )
         card.pack(fill="x", padx=14, pady=(0, 10))
+        if title is None:
+            customtkinter.CTkFrame(card, height=0, fg_color="transparent").pack(pady=(7, 0))
+            return card
         header = customtkinter.CTkFrame(card, fg_color="transparent")
         header.pack(fill="x", padx=16, pady=(11, 4))
         customtkinter.CTkLabel(
@@ -126,11 +134,6 @@ class SettingsWindow(customtkinter.CTk):
 
         header = customtkinter.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=20, pady=(14, 10))
-        self._logo = customtkinter.CTkImage(render_icon(64), size=(30, 30))
-        customtkinter.CTkLabel(header, image=self._logo, text="").pack(side="left")
-        customtkinter.CTkLabel(
-            header, text="AutoBrightness", text_color=TEXT_COLOR, font=_font(20, "bold")
-        ).pack(side="left", padx=(9, 0))
         self._enabled_switch = customtkinter.CTkSwitch(
             header, text="", width=44, progress_color=ACCENT, command=self._toggle_enabled
         )
@@ -180,7 +183,7 @@ class SettingsWindow(customtkinter.CTk):
         ).pack(pady=(0, 10))
 
     def _build_live_card(self) -> None:
-        live = self._card("Live")
+        live = self._card(None)
         summary = customtkinter.CTkFrame(live, fg_color="transparent")
         summary.pack(fill="x", padx=16)
         self._brightness_label = customtkinter.CTkLabel(
