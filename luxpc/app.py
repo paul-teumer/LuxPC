@@ -8,6 +8,7 @@ import sys
 import pystray
 
 from .config import Settings
+from .i18n import set_language, translate
 from .icon import render_icon, system_icon_sizes
 from .service import BrightnessService
 from .ui import SettingsWindow
@@ -29,6 +30,7 @@ def main() -> int:
         return 0
 
     settings = Settings()
+    set_language(settings.snapshot().language)
     service = BrightnessService(settings)
     service.start()
 
@@ -44,15 +46,27 @@ def main() -> int:
         settings.update(enabled=not settings.snapshot().enabled)
 
     menu = pystray.Menu(
-        pystray.MenuItem("Einstellungen öffnen", lambda: window.post(window.show), default=True),
+        pystray.MenuItem(lambda item: translate("tray.open"), lambda: window.post(window.show), default=True),
         pystray.MenuItem(
-            "Automatik aktiv", toggle_enabled, checked=lambda item: settings.snapshot().enabled
+            lambda item: translate("tray.enabled"), toggle_enabled, checked=lambda item: settings.snapshot().enabled
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Beenden", lambda: window.post(quit_application)),
+        pystray.MenuItem(lambda item: translate("tray.quit"), lambda: window.post(quit_application)),
     )
     tray = pystray.Icon("LuxPC", render_icon(system_icon_sizes()[0]), "LuxPC", menu)
     tray.run_detached()
+
+    shown_language = settings.snapshot().language
+
+    def apply_language() -> None:
+        nonlocal shown_language
+        language = settings.snapshot().language
+        if language != shown_language:
+            shown_language = language
+            set_language(language)
+            tray.update_menu()
+
+    settings.subscribe(apply_language)
 
     if "--minimized" in sys.argv:
         window.hide()

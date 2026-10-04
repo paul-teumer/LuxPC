@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Callable, Optional
 
+from . import i18n
+
 
 def default_config_path() -> Path:
     base = os.environ.get("APPDATA") or str(Path.home())
@@ -44,6 +46,7 @@ class SettingsData:
     max_brightness_percent: int = 100
     brightness_offset_percent: int = 0
     night_shift_percent: int = 0
+    language: str = i18n.AUTOMATIC
 
 
 # Kleinster Abstand zweier Kalibrierpunkte in Blendenstufen; näher liegende Punkte werden zusammengefasst.
@@ -69,6 +72,8 @@ def sanitize(data: SettingsData) -> SettingsData:
         current = getattr(data, name)
         clamped = max(minimum, min(maximum, current))
         setattr(data, name, type(current)(clamped))
+    if data.language not in (i18n.AUTOMATIC, *i18n.LANGUAGES):
+        data.language = i18n.AUTOMATIC
     if data.max_brightness_percent < data.min_brightness_percent:
         data.max_brightness_percent = data.min_brightness_percent
     data.calibration_points = _sanitize_points(data.calibration_points)
@@ -151,9 +156,9 @@ class Settings:
             listener()
 
     def reset(self) -> None:
-        """Stellt alle Einstellungen außer dem Ein/Aus-Schalter auf die Standardwerte."""
+        """Stellt alle Einstellungen außer Ein/Aus-Schalter und Sprache auf die Standardwerte."""
         with self._lock:
-            self._data = SettingsData(enabled=self._data.enabled)
+            self._data = SettingsData(enabled=self._data.enabled, language=self._data.language)
         self.save()
         for listener in list(self._listeners):
             listener()

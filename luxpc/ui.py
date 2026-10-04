@@ -14,10 +14,11 @@ import customtkinter
 from customtkinter.windows.widgets.appearance_mode.appearance_mode_tracker import AppearanceModeTracker
 from customtkinter.windows.widgets.scaling.scaling_tracker import ScalingTracker
 
-from . import __version__, display, startup
+from . import __version__, display, i18n, startup
 from . import mapping
 from .chart import Painter
 from .config import EXPOSURE_VALUE_RANGE, MIN_CALIBRATION_POINTS, MIN_POINT_DISTANCE, Settings
+from .i18n import translate
 from .icon import apply_window_icon, write_ico
 from .service import BrightnessService, Status
 
@@ -47,7 +48,6 @@ POINT_GRAB_RADIUS = 10
 RESET_CONFIRM_MS = 3000
 VISIBLE_POLL_MS = 30
 HIDDEN_POLL_MS = 1000
-AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
 
 def format_shutter(exposure_log2_seconds: Optional[int]) -> str:
@@ -60,19 +60,21 @@ def format_shutter(exposure_log2_seconds: Optional[int]) -> str:
 def describe_status(status: Status) -> tuple[str, bool]:
     """(Text, ist_Warnung)."""
     if status.state == "disabled":
-        return "Pausiert", False
+        return translate("status.paused"), False
     if status.state == "busy":
         users = status.message if len(status.message) <= 26 else status.message[:25] + "…"
-        return (f"Pausiert · {users}" if users else "Kamera belegt"), False
+        return (translate("status.paused_by", users=users) if users else translate("status.camera_busy")), False
     if status.state == "error":
         return status.message, True
+    if status.state == "brightness_error":
+        return translate("status.brightness_error", detail=status.message), True
     if status.state == "starting":
-        return "Starte …", False
+        return translate("status.starting"), False
     if not status.exposure_control_available:
-        return "Messung ungenau", True
+        return translate("status.imprecise"), True
     if not status.reliable:
-        return "Messgrenze erreicht", True
-    return "Aktiv", False
+        return translate("status.limit_reached"), True
+    return translate("status.active"), False
 
 
 def _curve_plot_area(width: int, height: int) -> tuple[int, int, int, int]:
@@ -89,7 +91,7 @@ def _format_duration(seconds: float) -> str:
         return f"{seconds:.0f} s"
     if seconds < 7200:
         return f"{seconds / 60:.0f} min"
-    return f"{seconds / 3600:.1f} h".replace(".", ",")
+    return f"{seconds / 3600:.1f} h".replace(".", translate("duration.decimal_separator"))
 
 
 def _font(size: int, weight: str = "normal") -> customtkinter.CTkFont:
@@ -124,7 +126,6 @@ class SettingsWindow(customtkinter.CTk):
             self.update_idletasks()
             apply_window_icon(ctypes.windll.user32.GetParent(self.winfo_id()), icon_path)
 
-        self._slider_refreshers: list[Callable] = []
         self._reset_confirm_job = None
         self._build()
         self.after(REFRESH_MS, self._refresh)
@@ -149,6 +150,10 @@ class SettingsWindow(customtkinter.CTk):
 
     def _build(self) -> None:
         data = self._settings.snapshot()
+        self._slider_refreshers: list[Callable] = []
+        self._graph_key = None
+        self._curve_key = None
+        self._listed_points: Optional[list] = None
 
         header = customtkinter.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=20, pady=(14, 10))
@@ -169,17 +174,18 @@ class SettingsWindow(customtkinter.CTk):
         self._build_live_card()
         self._build_calibration_card(data)
 
-        range_card = self._card("Helligkeitsbereich")
-        self._add_slider(range_card, "min_brightness_percent", "Minimum", 0, 100, data, lambda value: f"{int(value)} %", 100)
-        self._add_slider(range_card, "max_brightness_percent", "Maximum", 0, 100, data, lambda value: f"{int(value)} %", 100)
-        self._add_slider(range_card, "brightness_offset_percent", "Versatz", -100, 100, data, lambda value: f"{int(value):+d} %", 200)
+        range_card = self._card(translate("card.range"))
+        self._add_slider(range_card, "min_brightness_percent", translate("slider.minimum"), 0, 100, data, lambda value: f"{int(value)} %", 100)
+        self._add_slider(range_card, "max_brightness_percent", translate("slider.maximum"), 0, 100, data, lambda value: f"{int(value)} %", 100)
+        self._add_slider(range_card, "brightness_offset_percent", translate("slider.offset"), -100, 100, data, lambda value: f"{int(value):+d} %", 200)
 
-        behaviour = self._card("Verhalten")
-        self._add_slider(behaviour, "response_time_s", "Trägheit", 0, MAX_INTERVAL_S, data, _format_duration, 300, logarithmic=True)
-        self._add_slider(behaviour, "measure_interval_s", "Messintervall", 2, MAX_INTERVAL_S, data, _format_duration, 300, logarithmic=True)
-        self._add_slider(behaviour, "hysteresis_percent", "Mindeständerung", 0, 50, data, lambda value: f"{int(value)} %", 50)
+        behaviour = self._card(translate("card.behaviour"))
+        self._add_slider(behaviour, "response_time_s", translate("slider.response_time"), 0, MAX_INTERVAL_S, data, _format_duration, 300, logarithmic=True)
+        self._add_slider(behaviour, "measure_interval_s", translate("slider.measure_interval"), 2, MAX_INTERVAL_S, data, _format_duration, 300, logarithmic=True)
+        self._add_slider(behaviour, "hysteresis_percent", translate("slider.hysteresis"), 0, 50, data, lambda value: f"{int(value)} %", 50)
 
-        monitors = [AUTO_MONITOR_LABEL] + display.list_monitors()
+        auto_monitor = translate("monitor.all")
+        monitors = [auto_monitor] + display.list_monitors()
 
         def add_monitor_menu(parent: customtkinter.CTkFrame) -> None:
             menu = customtkinter.CTkOptionMenu(
@@ -188,20 +194,38 @@ class SettingsWindow(customtkinter.CTk):
                 fg_color=FIELD_COLOR, button_color=FIELD_HOVER, button_hover_color=FIELD_HOVER,
                 text_color=TEXT_COLOR, dropdown_text_color=TEXT_COLOR,
             )
-            menu.set(data.monitor if data.monitor in monitors else AUTO_MONITOR_LABEL)
+            menu.set(data.monitor if data.monitor in monitors else auto_monitor)
             self._slider_refreshers.append(
-                lambda current: menu.set(current.monitor if current.monitor in monitors else AUTO_MONITOR_LABEL)
+                lambda current: menu.set(current.monitor if current.monitor in monitors else auto_monitor)
             )
             menu.pack(side="right")
 
-        screen = self._card("Bildschirm", add_monitor_menu)
-        self._add_slider(screen, "night_shift_percent", "Nachtlicht", 0, 100, data, lambda value: f"{int(value)} %", 100)
+        screen = self._card(translate("card.screen"), add_monitor_menu)
+        self._add_slider(screen, "night_shift_percent", translate("slider.night_shift"), 0, 100, data, lambda value: f"{int(value)} %", 100)
 
         self._build_system_row()
 
+        self._build_footer()
+
+    def _build_footer(self) -> None:
+        footer = customtkinter.CTkFrame(self._body, fg_color="transparent")
+        footer.pack(fill="x", padx=20, pady=(0, 10))
         customtkinter.CTkLabel(
-            self._body, text=f"Version {__version__}", text_color=MUTED_TEXT, font=_font(11)
-        ).pack(pady=(0, 10))
+            footer, text=translate("footer.version", version=__version__), text_color=MUTED_TEXT, font=_font(11)
+        ).pack(side="left")
+        names = {i18n.AUTOMATIC: translate("language.automatic"), **i18n.LANGUAGE_NAMES}
+        self._language_choices = {name: language for language, name in names.items()}
+        menu = customtkinter.CTkOptionMenu(
+            footer, values=list(names.values()), command=self._select_language, height=24, width=120,
+            font=_font(11), dropdown_font=_font(11), corner_radius=8,
+            fg_color=FIELD_COLOR, button_color=FIELD_HOVER, button_hover_color=FIELD_HOVER,
+            text_color=TEXT_COLOR, dropdown_text_color=TEXT_COLOR,
+        )
+        menu.set(names[self._settings.snapshot().language])
+        menu.pack(side="right")
+        customtkinter.CTkLabel(
+            footer, text=translate("footer.language"), text_color=MUTED_TEXT, font=_font(11)
+        ).pack(side="right", padx=(0, 8))
 
     def _build_live_card(self) -> None:
         live = self._card(None)
@@ -224,8 +248,8 @@ class SettingsWindow(customtkinter.CTk):
 
         scale = customtkinter.CTkFrame(live, fg_color="transparent")
         scale.pack(fill="x", padx=16, pady=(2, 0))
-        customtkinter.CTkLabel(scale, text="dunkel", text_color=MUTED_TEXT, font=_font(11)).pack(side="left")
-        customtkinter.CTkLabel(scale, text="hell", text_color=MUTED_TEXT, font=_font(11)).pack(side="right")
+        customtkinter.CTkLabel(scale, text=translate("live.dark"), text_color=MUTED_TEXT, font=_font(11)).pack(side="left")
+        customtkinter.CTkLabel(scale, text=translate("live.bright"), text_color=MUTED_TEXT, font=_font(11)).pack(side="right")
         self._ambient_bar = customtkinter.CTkProgressBar(
             scale, progress_color=ACCENT, fg_color=FIELD_COLOR, height=6
         )
@@ -234,21 +258,19 @@ class SettingsWindow(customtkinter.CTk):
 
         self._graph = tk.Canvas(live, height=64, highlightthickness=0, bd=0)
         self._graph.pack(fill="x", padx=16, pady=(8, 4))
-        self._graph_key = None
         legend = customtkinter.CTkFrame(live, fg_color="transparent")
         legend.pack(fill="x", padx=16, pady=(0, 12))
-        for text, color in (("Umgebungslicht", AMBIENT_LINE), ("Bildschirm", BRIGHTNESS_LINE)):
+        for text, color in ((translate("live.ambient"), AMBIENT_LINE), (translate("live.screen"), BRIGHTNESS_LINE)):
             customtkinter.CTkLabel(legend, text="●", text_color=color, font=_font(10)).pack(side="left")
             customtkinter.CTkLabel(legend, text=text, text_color=MUTED_TEXT, font=_font(11)).pack(
                 side="left", padx=(3, 12)
             )
 
     def _build_calibration_card(self, data) -> None:
-        card = self._card("Kalibrierung")
+        card = self._card(translate("card.calibration"))
         self._curve = tk.Canvas(card, height=180, highlightthickness=0, bd=0)
         self._curve.pack(fill="x", padx=16, pady=(0, 6))
         self._dragged_point: Optional[int] = None
-        self._curve_key = None
         self._curve.bind("<Button-1>", self._on_curve_press)
         self._curve.bind("<B1-Motion>", self._on_curve_drag)
         self._curve.bind("<ButtonRelease-1>", lambda event: setattr(self, "_dragged_point", None))
@@ -271,13 +293,12 @@ class SettingsWindow(customtkinter.CTk):
         self._point_percent_label.configure(text=f"{int(self._point_percent)} %")
 
         customtkinter.CTkButton(
-            card, text="Jetzt mit dieser Helligkeit als Punkt festlegen", height=32, corner_radius=9,
+            card, text=translate("calibration.set_point"), height=32, corner_radius=9,
             font=_font(13, "bold"), fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
             command=lambda: self._service.add_calibration_point(self._point_percent),
         ).pack(fill="x", padx=16, pady=(2, 6))
         customtkinter.CTkLabel(
-            card, text="Passende Helligkeit für das jetzige Licht einstellen und festlegen – beliebig oft "
-            "bei verschiedenem Licht. Punkte lassen sich in der Kurve ziehen; ein Klick daneben setzt einen neuen.",
+            card, text=translate("calibration.hint"),
             text_color=MUTED_TEXT, font=_font(11), wraplength=380, justify="left",
         ).pack(anchor="w", padx=16, pady=(0, 6))
         self._points_toggle = customtkinter.CTkButton(
@@ -287,7 +308,6 @@ class SettingsWindow(customtkinter.CTk):
         self._points_toggle.pack(fill="x", padx=16, pady=(0, 10))
         self._points_frame = customtkinter.CTkFrame(card, fg_color="transparent")
         self._points_expanded = False
-        self._listed_points: Optional[list] = None
         self._point_count = 0
 
     def _toggle_point_list(self) -> None:
@@ -300,7 +320,7 @@ class SettingsWindow(customtkinter.CTk):
 
     def _update_point_toggle(self) -> None:
         arrow = "▾" if self._points_expanded else "▸"
-        self._points_toggle.configure(text=f"{arrow}  Kalibrierpunkte ({self._point_count})")
+        self._points_toggle.configure(text=f"{arrow}  " + translate("calibration.points", count=self._point_count))
 
     def _on_point_slider(self, value: float) -> None:
         self._point_percent = float(round(value))
@@ -433,19 +453,19 @@ class SettingsWindow(customtkinter.CTk):
         )
         row.pack(fill="x", padx=14, pady=(0, 8))
         self._autostart_switch = customtkinter.CTkSwitch(
-            row, text="Mit Windows starten", font=_font(13), text_color=TEXT_COLOR,
+            row, text=translate("system.autostart"), font=_font(13), text_color=TEXT_COLOR,
             progress_color=ACCENT, command=self._toggle_autostart,
         )
         self._autostart_switch.pack(side="left", padx=16, pady=11)
         if startup.is_enabled():
             self._autostart_switch.select()
         self._reset_button = customtkinter.CTkButton(
-            row, text="Zurücksetzen", width=100, height=28, corner_radius=8, font=_font(12, "bold"),
+            row, text=translate("system.reset"), width=100, height=28, corner_radius=8, font=_font(12, "bold"),
             fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR, command=self._reset_settings,
         )
         self._reset_button.pack(side="right", padx=(0, 16))
         customtkinter.CTkButton(
-            row, text="Beenden", width=84, height=28, corner_radius=8, font=_font(12, "bold"),
+            row, text=translate("system.quit"), width=84, height=28, corner_radius=8, font=_font(12, "bold"),
             fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR, command=self._on_quit,
         ).pack(side="right")
 
@@ -494,7 +514,7 @@ class SettingsWindow(customtkinter.CTk):
     def _reset_settings(self) -> None:
         """Erster Klick fordert Bestätigung an, ein zweiter innerhalb weniger Sekunden setzt zurück."""
         if self._reset_confirm_job is None:
-            self._reset_button.configure(text="Sicher?", fg_color=DANGER, hover_color=DANGER, text_color="#FFFFFF")
+            self._reset_button.configure(text=translate("system.reset_confirm"), fg_color=DANGER, hover_color=DANGER, text_color="#FFFFFF")
             self._reset_confirm_job = self.after(RESET_CONFIRM_MS, self._cancel_reset_confirmation)
             return
         self._cancel_reset_confirmation()
@@ -511,7 +531,7 @@ class SettingsWindow(customtkinter.CTk):
         if self._reset_confirm_job is not None:
             self.after_cancel(self._reset_confirm_job)
             self._reset_confirm_job = None
-        self._reset_button.configure(text="Zurücksetzen", fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR)
+        self._reset_button.configure(text=translate("system.reset"), fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR)
 
 
     def _schedule_save(self, key: str, value: float) -> None:
@@ -534,7 +554,17 @@ class SettingsWindow(customtkinter.CTk):
         startup.set_enabled(bool(self._autostart_switch.get()))
 
     def _select_monitor(self, choice: str) -> None:
-        self._settings.update(monitor=None if choice == AUTO_MONITOR_LABEL else choice)
+        self._settings.update(monitor=None if choice == translate("monitor.all") else choice)
+
+    def _select_language(self, choice: str) -> None:
+        self._settings.update(language=self._language_choices[choice])
+        self.after(0, self._rebuild)
+
+    def _rebuild(self) -> None:
+        self._cancel_reset_confirmation()
+        for child in self.winfo_children():
+            child.destroy()
+        self._build()
 
 
     def post(self, command: Callable[[], None]) -> None:
@@ -591,8 +621,8 @@ class SettingsWindow(customtkinter.CTk):
             self._ambient_bar.set(0)
         else:
             self._brightness_label.configure(text=f"{status.applied_percent} %")
-            self._ambient_label.configure(text=f"Umgebungslicht {status.exposure_value:.1f} EV")
-            self._shutter_label.configure(text=f"Belichtung {format_shutter(status.exposure_log2_seconds)}")
+            self._ambient_label.configure(text=translate("live.ambient_value", value=f"{status.exposure_value:.1f}"))
+            self._shutter_label.configure(text=translate("live.exposure", shutter=format_shutter(status.exposure_log2_seconds)))
             dark, bright = data.calibration_points[0][0], data.calibration_points[-1][0]
             self._ambient_bar.set(max(0.0, min(1.0, (status.exposure_value - dark) / (bright - dark))))
         if not self._point_percent_touched and status.applied_percent is not None:

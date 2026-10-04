@@ -1,5 +1,7 @@
 # LuxPC
 
+[English](README.en.md)
+
 Stellt die Bildschirmhelligkeit unter Windows automatisch passend zum Umgebungslicht ein – die Webcam dient dabei als Lichtmesser. Die Helligkeit ändert sich in kleinen Schritten, nie ruckartig.
 
 ## Installation (3 Schritte)
@@ -16,6 +18,7 @@ Die `LuxPC.exe` läuft auf jedem Windows-10/11-Rechner ohne weitere Installation
 - **Kalibrieren:** Bei dem jeweiligen Licht die passende Helligkeit einstellen und „Als Punkt festlegen“ drücken – beliebig oft bei verschiedenem Licht. Die Kurve durch alle Punkte zeigt die App an; ein Klick hinein setzt ebenfalls einen Punkt.
 - Die Kamera ist nur kurz pro Messung aktiv. Nutzt ein anderes Programm (Zoom, Teams …) die Kamera, pausiert LuxPC von selbst.
 
+Die Sprache (Deutsch/Englisch) folgt standardmäßig Windows und lässt sich unten im Einstellungsfenster umstellen.
 Die Einstellungen liegen in `%APPDATA%\LuxPC\settings.json`.
 
 ## Für Entwickler
@@ -27,6 +30,7 @@ Die Einstellungen liegen in `%APPDATA%\LuxPC\settings.json`.
 | `camera_usage` | Erkennt, ob ein anderes Programm die Kamera nutzt |
 | `mapping` | Kalibrierkurve, Glättung, Rampe |
 | `config` | Einstellungen und Kalibrierpunkte (JSON) |
+| `i18n` | Texte der Oberfläche in Deutsch und Englisch |
 | `ui`, `chart`, `icon`, `app` | Fenster, Diagramme, Symbol, Programmstart mit Infobereich-Symbol |
 
 

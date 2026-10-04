@@ -21,7 +21,7 @@ HISTORY_LENGTH = 240
 
 @dataclass(frozen=True)
 class Status:
-    state: str = "starting"  # starting | running | disabled | busy (Kamera belegt) | error
+    state: str = "starting"  # starting | running | disabled | busy (Kamera belegt) | error | brightness_error
     message: str = ""
     exposure_value: Optional[float] = None
     raw_exposure_value: Optional[float] = None
@@ -146,7 +146,7 @@ class BrightnessService:
                     smoother.reset()
                     ramp = mapping.BrightnessRamp()
                     next_measurement = 0.0
-                    self._publish(state="disabled", message="Automatik pausiert")
+                    self._publish(state="disabled", message="")
                     self._wait(TICK_S)
                     continue
 
@@ -182,10 +182,10 @@ class BrightnessService:
                         try:
                             self._set_brightness(step, settings.monitor)
                             ramp.applied = step
-                            if self.status.state == "error":
+                            if self.status.state in ("error", "brightness_error"):
                                 self._publish(state="running", message="")
                         except Exception as error:
-                            self._publish(state="error", message=f"Helligkeit nicht setzbar: {error}")
+                            self._publish(state="brightness_error", message=str(error))
                     if ramp.moving:
                         wait_s = RAMP_TICK_S
                     if now - last_history >= TICK_S:
