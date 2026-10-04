@@ -53,4 +53,4 @@ python -m pytest
 
 ## Lizenz
 
-Siehe `LICENSE`.
+Copyright © 2026 Paul Teumer. Lizenziert unter der [GNU General Public License v3.0](LICENSE).
