@@ -1,9 +1,9 @@
 import time
 
-import autobrightness.service as service_module
-from autobrightness.camera import CameraError, CameraInUseError, Reading
-from autobrightness.config import Settings
-from autobrightness.service import BrightnessService
+import luxpc.service as service_module
+from luxpc.camera import CameraError, CameraInUseError, Reading
+from luxpc.config import Settings
+from luxpc.service import BrightnessService
 
 
 class FakeCamera:

@@ -7,7 +7,7 @@ import winreg
 from pathlib import Path
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = "AutoBrightness"
+VALUE_NAME = "LuxPC"
 
 
 def launch_command() -> str:

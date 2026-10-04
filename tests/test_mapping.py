@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from autobrightness import mapping
-from autobrightness.config import SettingsData
+from luxpc import mapping
+from luxpc.config import SettingsData
 
 
 def settings(**changes) -> SettingsData:

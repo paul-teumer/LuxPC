@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from autobrightness.config import MIN_POINT_DISTANCE, Settings, SettingsData, sanitize
+from luxpc.config import MIN_POINT_DISTANCE, Settings, SettingsData, sanitize
 
 
 def test_defaults_when_file_missing(tmp_path):

@@ -13,7 +13,7 @@ from typing import Callable, Optional
 
 def default_config_path() -> Path:
     base = os.environ.get("APPDATA") or str(Path.home())
-    return Path(base) / "AutoBrightness" / "settings.json"
+    return Path(base) / "LuxPC" / "settings.json"
 
 
 def default_calibration_points() -> list[list[float]]:

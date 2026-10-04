@@ -112,13 +112,13 @@ class SettingsWindow(customtkinter.CTk):
         self._commands: "queue.Queue[Callable[[], None]]" = queue.Queue()
         self._pending_saves: dict[str, str] = {}
 
-        self.title("AutoBrightness")
+        self.title("LuxPC")
         self.geometry("470x650")
         self.minsize(430, 360)
         self.protocol("WM_DELETE_WINDOW", self.hide)
         # Ein eigenes Fenstersymbol verhindert, dass CustomTkinter sein blaues Standardsymbol setzt.
         with tempfile.TemporaryDirectory() as folder:
-            icon_path = Path(folder) / "AutoBrightness.ico"
+            icon_path = Path(folder) / "LuxPC.ico"
             write_ico(icon_path)
             self.iconbitmap(str(icon_path))
             self.update_idletasks()

@@ -1,4 +1,4 @@
-from autobrightness import camera_usage
+from luxpc import camera_usage
 
 
 def test_display_name_of_desktop_application_path():

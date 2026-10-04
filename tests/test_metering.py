@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from autobrightness import metering
+from luxpc import metering
 
 
 def gray_frame(level: float) -> np.ndarray:

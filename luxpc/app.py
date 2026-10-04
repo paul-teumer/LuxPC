@@ -12,7 +12,7 @@ from .icon import render_icon, system_icon_sizes
 from .service import BrightnessService
 from .ui import SettingsWindow
 
-MUTEX_NAME = "Local\\AutoBrightnessSingleInstance"
+MUTEX_NAME = "Local\\LuxPCSingleInstance"
 ERROR_ALREADY_EXISTS = 183
 
 
@@ -51,7 +51,7 @@ def main() -> int:
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Beenden", lambda: window.post(quit_application)),
     )
-    tray = pystray.Icon("AutoBrightness", render_icon(system_icon_sizes()[0]), "AutoBrightness", menu)
+    tray = pystray.Icon("LuxPC", render_icon(system_icon_sizes()[0]), "LuxPC", menu)
     tray.run_detached()
 
     if "--minimized" in sys.argv:

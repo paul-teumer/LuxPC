@@ -1,3 +1,3 @@
-from autobrightness.app import main
+from luxpc.app import main
 
 raise SystemExit(main())

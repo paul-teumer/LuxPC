@@ -2,6 +2,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 build/
-/AutoBrightness.exe
+/LuxPC.exe
 *.spec
 .coverage
