@@ -1,45 +1,48 @@
 # LuxPC
 
-[English](README.en.md)
+[Deutsch](README.de.md)
 
-Stellt die Bildschirmhelligkeit unter Windows automatisch passend zum Umgebungslicht ein – die Webcam dient dabei als Lichtmesser. Die Helligkeit ändert sich in kleinen Schritten, nie ruckartig.
+**Automatic screen brightness for Windows PCs without a light sensor** – your webcam serves as the ambient light sensor. Brightness changes in small steps, never abruptly.
 
-## Installation (3 Schritte)
+Made for desktop PCs with external monitors and for laptops without an ambient light sensor, where Windows' adaptive brightness is not available. Runs quietly in the notification area, needs no installation and no account.
 
-1. [Python](https://www.python.org/downloads/) installieren (beim Installieren „Add Python to PATH“ anhaken).
-2. Dieses Projekt herunterladen (grüner Knopf „Code“ → „Download ZIP“) und entpacken.
-3. `build.bat` doppelklicken. Danach liegt `LuxPC.exe` im Ordner.
+## Installation
 
-Die `LuxPC.exe` läuft auf jedem Windows-10/11-Rechner ohne weitere Installation und kann beliebig kopiert werden.
+**Easiest:** [download `LuxPC.exe` from the latest release](https://github.com/paul-teumer/LuxPC/releases/latest) and double-click it. No Python needed; it runs on any Windows 10/11 computer and can be copied freely.
 
-## Benutzung
+**Build it yourself (3 steps):**
 
-- Das Sonnensymbol im Infobereich (neben der Uhr) öffnet mit einem Klick die Einstellungen.
-- **Kalibrieren:** Bei dem jeweiligen Licht die passende Helligkeit einstellen und „Als Punkt festlegen“ drücken – beliebig oft bei verschiedenem Licht. Die Kurve durch alle Punkte zeigt die App an; ein Klick hinein setzt ebenfalls einen Punkt.
-- Die Kamera ist nur kurz pro Messung aktiv. Nutzt ein anderes Programm (Zoom, Teams …) die Kamera, pausiert LuxPC von selbst.
+1. Install [Python](https://www.python.org/downloads/) (tick "Add Python to PATH" during setup).
+2. Download this project (green "Code" button → "Download ZIP") and extract it.
+3. Double-click `build.bat`. Afterwards `LuxPC.exe` is in the folder.
 
-Die Sprache (Deutsch/Englisch) folgt standardmäßig Windows und lässt sich unten im Einstellungsfenster umstellen.
-Die Einstellungen liegen in `%APPDATA%\LuxPC\settings.json`.
+## Usage
 
-## Für Entwickler
+- The sun icon in the notification area (next to the clock) opens the settings with one click.
+- **Calibrate:** Under the respective light, set the suitable brightness and press "Set this brightness as a point now" – as often as you like under different light. The app shows the curve through all points; a click into the curve also adds a point.
+- The camera is active only briefly per measurement. If another program (Zoom, Teams …) uses the camera, LuxPC pauses by itself.
+- The interface language follows Windows by default and can be changed at the bottom of the settings window (German/English).
 
-| Modul | Aufgabe |
+Settings are stored in `%APPDATA%\LuxPC\settings.json`.
+
+## For developers
+
+| Module | Purpose |
 |---|---|
-| `service` | Regelkreis: Messung, Glättung, Helligkeitsrampe |
-| `camera`, `metering`, `dshow` | Webcam als Belichtungsmesser (Belichtungswert in EV) |
-| `camera_usage` | Erkennt, ob ein anderes Programm die Kamera nutzt |
-| `mapping` | Kalibrierkurve, Glättung, Rampe |
-| `config` | Einstellungen und Kalibrierpunkte (JSON) |
-| `i18n` | Texte der Oberfläche in Deutsch und Englisch |
-| `ui`, `chart`, `icon`, `app` | Fenster, Diagramme, Symbol, Programmstart mit Infobereich-Symbol |
-
+| `service` | Control loop: measurement, smoothing, brightness ramp |
+| `camera`, `metering`, `dshow` | Webcam as exposure meter (exposure value in EV) |
+| `camera_usage` | Detects whether another program is using the camera |
+| `mapping` | Calibration curve, smoothing, ramp |
+| `config` | Settings and calibration points (JSON) |
+| `i18n` | UI texts in German and English |
+| `ui`, `chart`, `icon`, `app` | Window, charts, icon, startup with tray icon |
 
 ```powershell
 pip install -r requirements-dev.txt
-python main.pyw      # direkt starten
-python -m pytest     # Tests
+python main.pyw      # run directly
+python -m pytest     # tests
 ```
 
-## Lizenz
+## License
 
-Copyright © 2026 Paul Teumer. Lizenziert unter der [GNU General Public License v3.0](LICENSE).
+Copyright © 2026 Paul Teumer. Licensed under the [GNU General Public License v3.0](LICENSE).
