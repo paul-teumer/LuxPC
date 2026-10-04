@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from dataclasses import asdict, dataclass, field, fields
@@ -15,6 +16,21 @@ def default_config_path() -> Path:
     return Path(base) / "AutoBrightness" / "settings.json"
 
 
+def default_calibration_points() -> list[list[float]]:
+    """Sigmoid-Kurve (logistisch, Mitte bei 2 EV) von 10 % bis 100 %, an den Rändern exakt normiert."""
+    first, last, count, midpoint, steepness = -4.0, 8.0, 7, 2.0, 0.7
+
+    def logistic(exposure_value: float) -> float:
+        return 1 / (1 + math.exp(-steepness * (exposure_value - midpoint)))
+
+    points = []
+    for index in range(count):
+        exposure_value = first + (last - first) * index / (count - 1)
+        ratio = (logistic(exposure_value) - logistic(first)) / (logistic(last) - logistic(first))
+        points.append([exposure_value, round(10 + 90 * ratio, 1)])
+    return points
+
+
 @dataclass
 class SettingsData:
     enabled: bool = True
@@ -23,7 +39,7 @@ class SettingsData:
     measure_interval_s: float = 10.0
     response_time_s: float = 20.0
     hysteresis_percent: int = 2
-    calibration_points: list[list[float]] = field(default_factory=lambda: [[1.0, 10.0], [8.0, 100.0]])
+    calibration_points: list[list[float]] = field(default_factory=lambda: default_calibration_points())
     min_brightness_percent: int = 10
     max_brightness_percent: int = 100
     brightness_offset_percent: int = 0
