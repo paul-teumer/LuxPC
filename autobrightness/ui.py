@@ -14,7 +14,8 @@ import customtkinter
 
 from . import __version__, display, startup
 from . import mapping
-from .config import MIN_CALIBRATION_POINTS, MIN_POINT_DISTANCE, Settings
+from .chart import Painter
+from .config import EXPOSURE_VALUE_RANGE, MIN_CALIBRATION_POINTS, MIN_POINT_DISTANCE, Settings
 from .icon import apply_window_icon, write_ico
 from .service import BrightnessService, Status
 
@@ -40,6 +41,7 @@ REFRESH_MS = 500
 MAX_INTERVAL_S = 86400
 MIN_GRAPH_SAMPLES = 60
 CURVE_MARGIN = 10
+POINT_GRAB_RADIUS = 10
 AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
 
@@ -230,7 +232,11 @@ class SettingsWindow(customtkinter.CTk):
         card = self._card("Kalibrierung")
         self._curve = tk.Canvas(card, height=150, highlightthickness=0, bd=0)
         self._curve.pack(fill="x", padx=16, pady=(0, 6))
-        self._curve.bind("<Button-1>", self._on_curve_click)
+        self._dragged_point: Optional[int] = None
+        self._curve.bind("<Button-1>", self._on_curve_press)
+        self._curve.bind("<B1-Motion>", self._on_curve_drag)
+        self._curve.bind("<ButtonRelease-1>", lambda event: setattr(self, "_dragged_point", None))
+        self._curve.configure(cursor="crosshair")
 
         chooser = customtkinter.CTkFrame(card, fg_color="transparent")
         chooser.pack(fill="x", padx=16, pady=(0, 4))
@@ -255,12 +261,30 @@ class SettingsWindow(customtkinter.CTk):
         ).pack(fill="x", padx=16, pady=(2, 6))
         customtkinter.CTkLabel(
             card, text="Passende Helligkeit für das jetzige Licht einstellen und festlegen – beliebig oft "
-            "bei verschiedenem Licht. Ein Klick in die Kurve setzt dort einen Punkt.",
+            "bei verschiedenem Licht. Punkte lassen sich in der Kurve ziehen; ein Klick daneben setzt einen neuen.",
             text_color=MUTED_TEXT, font=_font(11), wraplength=380, justify="left",
         ).pack(anchor="w", padx=16, pady=(0, 6))
+        self._points_toggle = customtkinter.CTkButton(
+            card, text="", height=26, corner_radius=8, font=_font(12), anchor="w",
+            fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR, command=self._toggle_point_list,
+        )
+        self._points_toggle.pack(fill="x", padx=16, pady=(0, 10))
         self._points_frame = customtkinter.CTkFrame(card, fg_color="transparent")
-        self._points_frame.pack(fill="x", padx=16, pady=(0, 10))
+        self._points_expanded = False
         self._listed_points: Optional[list] = None
+        self._point_count = 0
+
+    def _toggle_point_list(self) -> None:
+        self._points_expanded = not self._points_expanded
+        if self._points_expanded:
+            self._points_frame.pack(fill="x", padx=16, pady=(0, 10))
+        else:
+            self._points_frame.pack_forget()
+        self._update_point_toggle()
+
+    def _update_point_toggle(self) -> None:
+        arrow = "▾" if self._points_expanded else "▸"
+        self._points_toggle.configure(text=f"{arrow}  Kalibrierpunkte ({self._point_count})")
 
     def _on_point_slider(self, value: float) -> None:
         self._point_percent = float(round(value))
@@ -274,19 +298,55 @@ class SettingsWindow(customtkinter.CTk):
             values.append(current)
         return min(values) - 0.5, max(values) + 0.5
 
-    def _on_curve_click(self, event) -> None:
-        data = self._settings.snapshot()
+    def _curve_geometry(self, data) -> tuple[float, float, int, int]:
         low, high = self._curve_bounds(data)
-        width, height = max(self._curve.winfo_width(), 50), max(self._curve.winfo_height(), 50)
-        exposure_value = low + (event.x - CURVE_MARGIN) / (width - 2 * CURVE_MARGIN) * (high - low)
-        percent = 100 * (height - CURVE_MARGIN - event.y) / (height - 2 * CURVE_MARGIN)
+        return low, high, max(self._curve.winfo_width(), 50), max(self._curve.winfo_height(), 50)
+
+    def _curve_position(self, event_x: int, event_y: int, data) -> tuple[float, float]:
+        """(Blendenstufe, Prozent) zu einer Position auf der Zeichenfläche."""
+        low, high, width, height = self._curve_geometry(data)
+        exposure_value = low + (event_x - CURVE_MARGIN) / (width - 2 * CURVE_MARGIN) * (high - low)
+        percent = 100 * (height - CURVE_MARGIN - event_y) / (height - 2 * CURVE_MARGIN)
+        return exposure_value, max(0.0, min(100.0, percent))
+
+    def _on_curve_press(self, event) -> None:
+        """Greift einen nahen Punkt zum Verschieben; sonst wird an der Stelle ein neuer Punkt gesetzt."""
+        data = self._settings.snapshot()
+        low, high, width, height = self._curve_geometry(data)
+        self._dragged_point = None
+        nearest = None
+        for index, (exposure_value, percent) in enumerate(data.calibration_points):
+            x = CURVE_MARGIN + (exposure_value - low) / (high - low) * (width - 2 * CURVE_MARGIN)
+            y = height - CURVE_MARGIN - percent / 100 * (height - 2 * CURVE_MARGIN)
+            distance = math.hypot(event.x - x, event.y - y)
+            if distance <= POINT_GRAB_RADIUS and (nearest is None or distance < nearest[0]):
+                nearest = (distance, index)
+        if nearest is not None:
+            self._dragged_point = nearest[1]
+            return
+        exposure_value, percent = self._curve_position(event.x, event.y, data)
         points = [point for point in data.calibration_points if abs(point[0] - exposure_value) >= MIN_POINT_DISTANCE]
-        self._settings.update(calibration_points=points + [[exposure_value, max(0.0, min(100.0, percent))]])
+        self._settings.update(calibration_points=points + [[exposure_value, percent]])
+
+    def _on_curve_drag(self, event) -> None:
+        """Verschiebt den gegriffenen Punkt, ohne die Reihenfolge der Punkte zu verändern."""
+        index = self._dragged_point
+        if index is None:
+            return
+        points = self._settings.snapshot().calibration_points
+        data = self._settings.snapshot()
+        exposure_value, percent = self._curve_position(event.x, event.y, data)
+        lower = points[index - 1][0] + MIN_POINT_DISTANCE if index > 0 else EXPOSURE_VALUE_RANGE[0]
+        upper = points[index + 1][0] - MIN_POINT_DISTANCE if index < len(points) - 1 else EXPOSURE_VALUE_RANGE[1]
+        points[index] = [max(lower, min(upper, exposure_value)), percent]
+        self._settings.update(calibration_points=points)
 
     def _update_point_list(self, points) -> None:
         if points == self._listed_points:
             return
         self._listed_points = [list(point) for point in points]
+        self._point_count = len(points)
+        self._update_point_toggle()
         for child in self._points_frame.winfo_children():
             child.destroy()
         removable = len(points) > MIN_CALIBRATION_POINTS
@@ -304,11 +364,8 @@ class SettingsWindow(customtkinter.CTk):
             ).pack(side="right", pady=1)
 
     def _draw_curve(self, data) -> None:
-        canvas = self._curve
-        canvas.configure(bg=_color(GRAPH_BACKGROUND))
-        canvas.delete("all")
-        width, height = max(canvas.winfo_width(), 50), max(canvas.winfo_height(), 50)
-        low, high = self._curve_bounds(data)
+        low, high, width, height = self._curve_geometry(data)
+        painter = Painter(width, height, _color(GRAPH_BACKGROUND))
 
         def x_of(exposure_value: float) -> float:
             return CURVE_MARGIN + (exposure_value - low) / (high - low) * (width - 2 * CURVE_MARGIN)
@@ -317,25 +374,25 @@ class SettingsWindow(customtkinter.CTk):
             return height - CURVE_MARGIN - percent / 100 * (height - 2 * CURVE_MARGIN)
 
         for percent in (0, 25, 50, 75, 100):
-            canvas.create_line(CURVE_MARGIN, y_of(percent), width - CURVE_MARGIN, y_of(percent), fill=_color(GRAPH_GRID))
-        canvas.create_text(width - CURVE_MARGIN, y_of(100) - 1, text="100 %", anchor="se", fill=_color(MUTED_TEXT), font=_font(9))
+            painter.line([CURVE_MARGIN, y_of(percent), width - CURVE_MARGIN, y_of(percent)], _color(GRAPH_GRID))
+        painter.text(width - CURVE_MARGIN, y_of(100) - 2, "100 %", _color(MUTED_TEXT), 9, anchor="rs")
 
-        samples = 120
+        samples = 160
         curve = []
         for index in range(samples + 1):
             exposure_value = low + (high - low) * index / samples
             curve += [x_of(exposure_value), y_of(mapping.target_brightness(exposure_value, data))]
-        canvas.create_line(*curve, fill=_color(BRIGHTNESS_LINE), width=2)
-
-        for exposure_value, percent in data.calibration_points:
-            x, y = x_of(exposure_value), y_of(percent)
-            canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill=_color(CARD_COLOR), outline=_color(BRIGHTNESS_LINE), width=2)
+        painter.line(curve, _color(BRIGHTNESS_LINE), 2)
 
         current = self._service.status.exposure_value
         if current is not None:
             x, y = x_of(current), y_of(mapping.target_brightness(current, data))
-            canvas.create_line(x, y_of(100), x, y_of(0), fill=_color(AMBIENT_LINE), dash=(3, 3))
-            canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill=_color(AMBIENT_LINE), outline="")
+            painter.dashed_line((x, y_of(100)), (x, y_of(0)), _color(AMBIENT_LINE), 1, 3)
+            painter.circle(x, y, 5, fill=_color(AMBIENT_LINE))
+
+        for exposure_value, percent in data.calibration_points:
+            painter.circle(x_of(exposure_value), y_of(percent), 4.5, fill=_color(CARD_COLOR), outline=_color(BRIGHTNESS_LINE), width=2)
+        painter.show(self._curve)
 
     def _build_system_row(self) -> None:
         row = customtkinter.CTkFrame(
@@ -475,24 +532,22 @@ class SettingsWindow(customtkinter.CTk):
         self._draw_graph(data)
 
     def _draw_graph(self, data) -> None:
-        canvas = self._graph
-        canvas.configure(bg=_color(GRAPH_BACKGROUND))
-        canvas.delete("all")
-        width, height = max(canvas.winfo_width(), 50), max(canvas.winfo_height(), 50)
+        width, height = max(self._graph.winfo_width(), 50), max(self._graph.winfo_height(), 50)
+        painter = Painter(width, height, _color(GRAPH_BACKGROUND))
         for fraction in (0.25, 0.5, 0.75):
-            canvas.create_line(0, height * fraction, width, height * fraction, fill=_color(GRAPH_GRID))
+            painter.line([0, height * fraction, width, height * fraction], _color(GRAPH_GRID))
         history = list(self._service.history)
-        if len(history) < 2:
-            return
-        low = min(data.calibration_points[0][0], min(entry[1] for entry in history)) - 0.5
-        high = max(data.calibration_points[-1][0], max(entry[1] for entry in history)) + 0.5
-        step = width / (max(len(history), MIN_GRAPH_SAMPLES) - 1)
+        if len(history) >= 2:
+            low = min(data.calibration_points[0][0], min(entry[1] for entry in history)) - 0.5
+            high = max(data.calibration_points[-1][0], max(entry[1] for entry in history)) + 0.5
+            step = width / (max(len(history), MIN_GRAPH_SAMPLES) - 1)
 
-        def line(values: list[float], color: str) -> None:
-            points = []
-            for index, value in enumerate(values):
-                points += [index * step, height - 6 - value * (height - 12)]
-            canvas.create_line(*points, fill=color, width=2, smooth=True)
+            def line(values: list[float], color: str) -> None:
+                points = []
+                for index, value in enumerate(values):
+                    points += [index * step, height - 6 - value * (height - 12)]
+                painter.line(points, color, 2)
 
-        line([(entry[1] - low) / (high - low) for entry in history], _color(AMBIENT_LINE))
-        line([entry[2] / 100 for entry in history], _color(BRIGHTNESS_LINE))
+            line([(entry[1] - low) / (high - low) for entry in history], _color(AMBIENT_LINE))
+            line([entry[2] / 100 for entry in history], _color(BRIGHTNESS_LINE))
+        painter.show(self._graph)
