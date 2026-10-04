@@ -1,0 +1,6 @@
+customtkinter>=5.2
+numpy>=1.26
+opencv-python>=4.8
+Pillow>=10
+pystray>=0.19
+screen-brightness-control>=0.24
