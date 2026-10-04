@@ -51,7 +51,10 @@ class ExposureValueSmoother:
 
 
 class BrightnessRamp:
-    """Führt die gesetzte Helligkeit in Schritten von höchstens einem Prozentpunkt nach.
+    """Führt die gesetzte Helligkeit in kleinen Schritten nach.
+
+    Ein Schritt beträgt mindestens einen Prozentpunkt und höchstens ein Viertel des Abstands
+    zum Ziel: kleine Abweichungen laufen fein, große Sprünge werden schnell, aber weich überbrückt.
 
     Eine Bewegung beginnt erst, wenn der Zielwert mindestens um die Mindeständerung
     abweicht (gegen Flackern), und läuft dann Schritt für Schritt bis zum Ziel.
@@ -72,4 +75,5 @@ class BrightnessRamp:
         if not self.moving and abs(difference) < hysteresis_percent and target not in (0, 100):
             return None
         self.moving = True
-        return self.applied + (1 if difference > 0 else -1)
+        step = max(1, math.ceil(abs(difference) / 4))
+        return self.applied + (step if difference > 0 else -step)

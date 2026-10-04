@@ -171,12 +171,12 @@ def test_night_light_applied_and_reset_on_stop(tmp_path):
     assert night_light[-1] == 0
 
 
-def test_brightness_starts_at_current_value_and_moves_in_single_steps(tmp_path):
-    _, service, applied, _ = make_service(tmp_path, FakeCamera(5.0), current_brightness=40)
+def test_brightness_starts_at_current_value_and_approaches_target_without_jumping(tmp_path):
+    _, service, applied, _ = make_service(tmp_path, FakeCamera(5.0), current_brightness=0)
     service.start()
     try:
-        assert wait_for(lambda: len(applied) >= 5)
-        assert applied[:5] == [41, 42, 43, 44, 45]
+        assert wait_for(lambda: applied and applied[-1] == 50)
+        assert applied[0] <= 13 and applied == sorted(applied) and len(applied) >= 5
     finally:
         service.stop()
 

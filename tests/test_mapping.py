@@ -90,3 +90,8 @@ def test_ramp_moves_in_single_steps_until_target_is_reached():
 def test_ramp_always_reaches_limits():
     assert mapping.BrightnessRamp(99).next_value(100.0, 3) == 100
     assert mapping.BrightnessRamp(1).next_value(0.0, 3) == 0
+
+
+def test_ramp_step_grows_with_distance_but_stays_a_fraction_of_it():
+    assert mapping.BrightnessRamp(0).next_value(100.0, 0) == 25
+    assert mapping.BrightnessRamp(100).next_value(0.0, 0) == 75

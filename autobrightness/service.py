@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from collections import deque
 from dataclasses import dataclass, replace
 from typing import Callable, Optional
@@ -117,6 +118,8 @@ class BrightnessService:
         last_night_light: Optional[int] = None
         next_measurement = 0.0
         last_tick = time.monotonic()
+        measurement_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="measurement")
+        pending: Optional[Future] = None
         try:
             while not self._stop.is_set():
                 settings = self._settings.snapshot()
@@ -134,11 +137,13 @@ class BrightnessService:
                     self._wait(TICK_S)
                     continue
 
-                if now >= next_measurement:
+                if pending is None and now >= next_measurement:
                     if camera is None or camera_index != settings.camera_index:
                         camera = self._camera_factory(settings.camera_index)
                         camera_index = settings.camera_index
-                    reading = self._measure(camera)
+                    pending = measurement_worker.submit(self._measure, camera)
+                if pending is not None and pending.done():
+                    reading, pending = pending.result(), None
                     if reading is None:
                         next_measurement = time.monotonic() + RETRY_DELAY_S
                     else:
@@ -152,7 +157,6 @@ class BrightnessService:
                             reliable=reading.reliable,
                             exposure_control_available=reading.exposure_control_available,
                         )
-                    last_tick = time.monotonic()
 
                 wait_s = TICK_S
                 smoothed = smoother.advance(elapsed, settings.response_time_s)
@@ -177,6 +181,7 @@ class BrightnessService:
                     self._publish(exposure_value=smoothed, target_percent=round(level), applied_percent=ramp.applied)
                 self._wait(wait_s)
         finally:
+            measurement_worker.shutdown(wait=True)
             if camera is not None:
                 camera.close()
 
