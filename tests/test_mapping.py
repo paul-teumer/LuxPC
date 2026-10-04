@@ -69,9 +69,24 @@ def test_zero_response_time_disables_smoothing():
     assert smoother.advance(1.0, 0.0) == 7.0
 
 
-@pytest.mark.parametrize(
-    "candidate, last, hysteresis, expected",
-    [(50, None, 3, True), (51, 50, 3, False), (53, 50, 3, True), (50, 50, 3, False), (100, 99, 3, True), (0, 1, 3, True)],
-)
-def test_hysteresis(candidate, last, hysteresis, expected):
-    assert mapping.should_apply(candidate, last, hysteresis) is expected
+def test_ramp_first_value_is_target():
+    assert mapping.BrightnessRamp().next_value(49.6, 3) == 50
+
+
+def test_ramp_ignores_deviation_below_hysteresis():
+    assert mapping.BrightnessRamp(50).next_value(52.0, 3) is None
+
+
+def test_ramp_moves_in_single_steps_until_target_is_reached():
+    ramp = mapping.BrightnessRamp(50)
+    values = []
+    while (value := ramp.next_value(54.0, 3)) is not None:
+        values.append(value)
+        ramp.applied = value
+    assert values == [51, 52, 53, 54]
+    assert ramp.next_value(55.0, 3) is None
+
+
+def test_ramp_always_reaches_limits():
+    assert mapping.BrightnessRamp(99).next_value(100.0, 3) == 100
+    assert mapping.BrightnessRamp(1).next_value(0.0, 3) == 0

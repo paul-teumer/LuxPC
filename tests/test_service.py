@@ -38,7 +38,7 @@ def wait_for(condition, timeout=4.0):
     return False
 
 
-def make_service(tmp_path, camera, camera_users=lambda: [], **settings_changes):
+def make_service(tmp_path, camera, camera_users=lambda: [], current_brightness=None, **settings_changes):
     settings = Settings(tmp_path / "settings.json")
     settings.update(
         response_time_s=0.0, dark_exposure_value=0.0, bright_exposure_value=10.0,
@@ -48,6 +48,7 @@ def make_service(tmp_path, camera, camera_users=lambda: [], **settings_changes):
     service = BrightnessService(
         settings, lambda index: camera,
         set_brightness=lambda percent, monitor: applied.append(percent),
+        get_brightness=lambda monitor: current_brightness,
         apply_night_light=lambda percent: night_light.append(percent) or True,
         find_camera_users=camera_users,
     )
@@ -166,3 +167,13 @@ def test_night_light_applied_and_reset_on_stop(tmp_path):
     assert wait_for(lambda: 40 in night_light)
     service.stop()
     assert night_light[-1] == 0
+
+
+def test_brightness_starts_at_current_value_and_moves_in_single_steps(tmp_path):
+    _, service, applied, _ = make_service(tmp_path, FakeCamera(5.0), current_brightness=40)
+    service.start()
+    try:
+        assert wait_for(lambda: len(applied) >= 5)
+        assert applied[:5] == [41, 42, 43, 44, 45]
+    finally:
+        service.stop()

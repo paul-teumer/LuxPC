@@ -50,12 +50,26 @@ class ExposureValueSmoother:
         return self._value
 
 
-def should_apply(candidate: int, last_applied: Optional[int], hysteresis_percent: int) -> bool:
-    """Neue Helligkeit nur bei ausreichender Abweichung; Randwerte werden immer erreicht."""
-    if last_applied is None:
-        return True
-    if candidate == last_applied:
-        return False
-    if candidate in (0, 100):
-        return True
-    return abs(candidate - last_applied) >= hysteresis_percent
+class BrightnessRamp:
+    """Führt die gesetzte Helligkeit in Schritten von höchstens einem Prozentpunkt nach.
+
+    Eine Bewegung beginnt erst, wenn der Zielwert mindestens um die Mindeständerung
+    abweicht (gegen Flackern), und läuft dann Schritt für Schritt bis zum Ziel.
+    """
+
+    def __init__(self, applied: Optional[int] = None) -> None:
+        self.applied = applied
+        self.moving = False
+
+    def next_value(self, level: float, hysteresis_percent: int) -> Optional[int]:
+        target = round(level)
+        if self.applied is None:
+            return target
+        difference = target - self.applied
+        if difference == 0:
+            self.moving = False
+            return None
+        if not self.moving and abs(difference) < hysteresis_percent and target not in (0, 100):
+            return None
+        self.moving = True
+        return self.applied + (1 if difference > 0 else -1)

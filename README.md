@@ -20,7 +20,7 @@ Laptop-Kameras haben feste Blende und festen Gain; die Szenenhelligkeit folgt da
 
 - **Kurze Messungen:** Die Kamera wird nur für etwa eine Sekunde pro Messung geöffnet (Standard: alle 10 s), dabei wird der Median mehrerer Einzelbilder gebildet. Danach wird sie freigegeben und die Belichtungsautomatik wiederhergestellt. Ein dauerhaft gehaltener DirectShow-Zugriff würde sonst Programme blockieren, die Media Foundation verwenden (Teams, Zoom, Browser).
 - **Videochats:** Nutzt ein anderes Programm die Kamera (erkannt über das Windows-Datenschutzprotokoll), pausiert AutoBrightness die Messung und lässt Belichtung und Helligkeit unverändert. Nach dem Gespräch läuft sie von selbst weiter.
-- **Glättung:** Zwischen den Messungen läuft die Helligkeit weich auf den zuletzt gemessenen Wert zu (einstellbare Trägheit).
+- **Glättung:** Zwischen den Messungen läuft die Helligkeit weich auf den zuletzt gemessenen Wert zu (einstellbare Trägheit). Die Bildschirmhelligkeit wird dabei in Einzelschritten von einem Prozentpunkt (zehnmal pro Sekunde, solange sie sich ändert) nachgeführt, ausgehend vom aktuellen Wert des Bildschirms; die Mindeständerung entscheidet nur, ob eine Anpassung beginnt.
 
 ## Installation
 

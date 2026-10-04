@@ -19,6 +19,15 @@ def list_monitors() -> list[str]:
         return []
 
 
+def get_brightness(monitor: Optional[str]) -> Optional[int]:
+    """Aktuelle Helligkeit in Prozent; None, wenn sie sich nicht auslesen lässt."""
+    try:
+        values = screen_brightness_control.get_brightness(display=monitor) if monitor else screen_brightness_control.get_brightness()
+        return int(values[0])
+    except Exception:
+        return None
+
+
 def set_brightness(percent: int, monitor: Optional[str]) -> None:
     percent = max(0, min(100, int(percent)))
     if monitor:

@@ -13,6 +13,7 @@ from .camera import CameraError, ExposureMeterCamera
 from .config import Settings
 
 TICK_S = 1.0
+RAMP_TICK_S = 0.1
 RETRY_DELAY_S = 5.0
 HISTORY_LENGTH = 240
 
@@ -36,12 +37,14 @@ class BrightnessService:
         settings: Settings,
         camera_factory: Callable[[int], ExposureMeterCamera] = ExposureMeterCamera,
         set_brightness: Callable[[int, Optional[str]], None] = display.set_brightness,
+        get_brightness: Callable[[Optional[str]], Optional[int]] = display.get_brightness,
         apply_night_light: Callable[[int], bool] = display.apply_night_light,
         find_camera_users: Callable[[], list[str]] = camera_usage.applications_using_camera,
     ) -> None:
         self._settings = settings
         self._camera_factory = camera_factory
         self._set_brightness = set_brightness
+        self._get_brightness = get_brightness
         self._apply_night_light = apply_night_light
         self._find_camera_users = find_camera_users
         self._stop = threading.Event()
@@ -103,7 +106,8 @@ class BrightnessService:
         camera: Optional[ExposureMeterCamera] = None
         camera_index: Optional[int] = None
         smoother = mapping.ExposureValueSmoother()
-        last_applied: Optional[int] = None
+        ramp = mapping.BrightnessRamp()
+        last_history = 0.0
         last_night_light: Optional[int] = None
         next_measurement = 0.0
         last_tick = time.monotonic()
@@ -118,6 +122,7 @@ class BrightnessService:
                 elapsed, last_tick = now - last_tick, now
                 if not settings.enabled:
                     smoother.reset()
+                    ramp = mapping.BrightnessRamp()
                     next_measurement = 0.0
                     self._publish(state="disabled", message="Automatik pausiert")
                     self._wait(TICK_S)
@@ -143,20 +148,28 @@ class BrightnessService:
                         )
                     last_tick = time.monotonic()
 
+                wait_s = TICK_S
                 smoothed = smoother.advance(elapsed, settings.response_time_s)
                 if smoothed is not None:
-                    target = round(mapping.target_brightness(smoothed, settings))
-                    if mapping.should_apply(target, last_applied, settings.hysteresis_percent):
+                    level = mapping.target_brightness(smoothed, settings)
+                    if ramp.applied is None:
+                        ramp.applied = self._get_brightness(settings.monitor)
+                    step = ramp.next_value(level, settings.hysteresis_percent)
+                    if step is not None:
                         try:
-                            self._set_brightness(target, settings.monitor)
-                            last_applied = target
+                            self._set_brightness(step, settings.monitor)
+                            ramp.applied = step
                             if self.status.state == "error":
                                 self._publish(state="running", message="")
                         except Exception as error:
                             self._publish(state="error", message=f"Helligkeit nicht setzbar: {error}")
-                    self.history.append((time.time(), smoothed, target))
-                    self._publish(exposure_value=smoothed, target_percent=target, applied_percent=last_applied)
-                self._wait(TICK_S)
+                    if ramp.moving:
+                        wait_s = RAMP_TICK_S
+                    if now - last_history >= TICK_S:
+                        last_history = now
+                        self.history.append((time.time(), smoothed, round(level)))
+                    self._publish(exposure_value=smoothed, target_percent=round(level), applied_percent=ramp.applied)
+                self._wait(wait_s)
         finally:
             if camera is not None:
                 camera.close()
