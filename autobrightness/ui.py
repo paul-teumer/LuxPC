@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import queue
 import tkinter as tk
 from typing import Callable, Optional
@@ -32,6 +33,7 @@ GRAPH_BACKGROUND = ("#F4F6FA", "#12161E")
 GRAPH_GRID = ("#E1E5EC", "#202635")
 SAVE_DELAY_MS = 250
 REFRESH_MS = 500
+MAX_INTERVAL_S = 86400
 MIN_GRAPH_SAMPLES = 60
 AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
@@ -63,6 +65,14 @@ def describe_status(status: Status) -> tuple[str, bool]:
 
 def _color(pair: tuple[str, str]) -> str:
     return pair[1] if customtkinter.get_appearance_mode() == "Dark" else pair[0]
+
+
+def _format_duration(seconds: float) -> str:
+    if seconds < 120:
+        return f"{seconds:.0f} s"
+    if seconds < 7200:
+        return f"{seconds / 60:.0f} min"
+    return f"{seconds / 3600:.1f} h".replace(".", ",")
 
 
 def _font(size: int, weight: str = "normal") -> customtkinter.CTkFont:
@@ -141,12 +151,12 @@ class SettingsWindow(customtkinter.CTk):
         range_card = self._card("Helligkeitsbereich")
         self._add_slider(range_card, "min_brightness_percent", "Minimum", 0, 100, data, lambda value: f"{int(value)} %", 100)
         self._add_slider(range_card, "max_brightness_percent", "Maximum", 0, 100, data, lambda value: f"{int(value)} %", 100)
-        self._add_slider(range_card, "brightness_offset_percent", "Versatz", -30, 30, data, lambda value: f"{int(value):+d} %", 60)
+        self._add_slider(range_card, "brightness_offset_percent", "Versatz", -100, 100, data, lambda value: f"{int(value):+d} %", 200)
 
         behaviour = self._card("Verhalten")
-        self._add_slider(behaviour, "response_time_s", "Trägheit", 0, 120, data, lambda value: f"{value:.0f} s", 120)
-        self._add_slider(behaviour, "measure_interval_s", "Messintervall", 2, 120, data, lambda value: f"{value:.0f} s", 118)
-        self._add_slider(behaviour, "hysteresis_percent", "Mindeständerung", 0, 10, data, lambda value: f"{int(value)} %", 10)
+        self._add_slider(behaviour, "response_time_s", "Trägheit", 0, MAX_INTERVAL_S, data, _format_duration, 300, logarithmic=True)
+        self._add_slider(behaviour, "measure_interval_s", "Messintervall", 2, MAX_INTERVAL_S, data, _format_duration, 300, logarithmic=True)
+        self._add_slider(behaviour, "hysteresis_percent", "Mindeständerung", 0, 50, data, lambda value: f"{int(value)} %", 50)
 
         monitors = [AUTO_MONITOR_LABEL] + display.list_monitors()
 
@@ -242,7 +252,17 @@ class SettingsWindow(customtkinter.CTk):
             fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR, command=self._on_quit,
         ).pack(side="right", padx=16)
 
-    def _add_slider(self, parent, key, label, minimum, maximum, data, formatter, steps) -> None:
+    def _add_slider(self, parent, key, label, minimum, maximum, data, formatter, steps, logarithmic=False) -> None:
+        """Bei logarithmic=True läuft der Regler exponentiell, damit kleine und große Werte fein einstellbar sind."""
+        if logarithmic:
+            offset = 1.0 - minimum
+            to_value = lambda position: (minimum + offset) ** (1 - position) * (maximum + offset) ** position - offset
+            to_position = lambda value: math.log((value + offset) / (minimum + offset)) / math.log((maximum + offset) / (minimum + offset))
+        else:
+            to_value = lambda position: position
+            to_position = lambda value: value
+        slider_minimum, slider_maximum = (0.0, 1.0) if logarithmic else (minimum, maximum)
+
         row = customtkinter.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=1)
         row.columnconfigure(1, weight=1)
@@ -254,16 +274,17 @@ class SettingsWindow(customtkinter.CTk):
         )
         value_label.grid(row=0, column=2)
 
-        def on_change(value: float) -> None:
+        def on_change(position: float) -> None:
+            value = to_value(position)
             value_label.configure(text=formatter(value))
             self._schedule_save(key, value)
 
         slider = customtkinter.CTkSlider(
-            row, from_=minimum, to=maximum, number_of_steps=steps, height=14,
+            row, from_=slider_minimum, to=slider_maximum, number_of_steps=steps, height=14,
             fg_color=FIELD_COLOR, progress_color=ACCENT, button_color=ACCENT,
             button_hover_color=ACCENT_HOVER, command=on_change,
         )
-        slider.set(getattr(data, key))
+        slider.set(to_position(getattr(data, key)))
         slider.grid(row=0, column=1, sticky="ew", padx=8)
         customtkinter.CTkFrame(parent, height=0, fg_color="transparent").pack(pady=(0, 3))
 

@@ -1,6 +1,8 @@
 import json
 
-from autobrightness.config import Settings, SettingsData, sanitize
+import pytest
+
+from autobrightness.config import MIN_EXPOSURE_SPAN, Settings, SettingsData, sanitize
 
 
 def test_defaults_when_file_missing(tmp_path):
@@ -41,7 +43,7 @@ def test_wrong_types_fall_back_to_default(tmp_path):
 def test_sanitize_keeps_ranges_consistent():
     data = sanitize(SettingsData(min_brightness_percent=80, max_brightness_percent=20, dark_exposure_value=5, bright_exposure_value=5))
     assert data.max_brightness_percent >= data.min_brightness_percent
-    assert data.bright_exposure_value - data.dark_exposure_value >= 1.0
+    assert data.bright_exposure_value - data.dark_exposure_value == pytest.approx(MIN_EXPOSURE_SPAN)
 
 
 def test_listeners_are_notified(tmp_path):

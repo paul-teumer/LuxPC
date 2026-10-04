@@ -31,17 +31,20 @@ class SettingsData:
     night_shift_percent: int = 0
 
 
+# Kleinster Abstand zwischen dunklem und hellem Referenzpunkt (sonst Division durch null).
+MIN_EXPOSURE_SPAN = 0.1
+
 # (Minimum, Maximum) je numerischem Feld; Werte außerhalb werden begrenzt.
 LIMITS: dict[str, tuple[float, float]] = {
     "camera_index": (0, 9),
-    "measure_interval_s": (2.0, 300.0),
-    "response_time_s": (0.0, 300.0),
-    "hysteresis_percent": (0, 10),
-    "dark_exposure_value": (-4.0, 12.0),
-    "bright_exposure_value": (-4.0, 12.0),
+    "measure_interval_s": (2.0, 86400.0),
+    "response_time_s": (0.0, 86400.0),
+    "hysteresis_percent": (0, 50),
+    "dark_exposure_value": (-30.0, 20.0),
+    "bright_exposure_value": (-30.0, 20.0),
     "min_brightness_percent": (0, 100),
     "max_brightness_percent": (0, 100),
-    "brightness_offset_percent": (-30, 30),
+    "brightness_offset_percent": (-100, 100),
     "night_shift_percent": (0, 100),
 }
 
@@ -53,8 +56,8 @@ def sanitize(data: SettingsData) -> SettingsData:
         setattr(data, name, type(current)(clamped))
     if data.max_brightness_percent < data.min_brightness_percent:
         data.max_brightness_percent = data.min_brightness_percent
-    if data.bright_exposure_value - data.dark_exposure_value < 1.0:
-        data.bright_exposure_value = data.dark_exposure_value + 1.0
+    if data.bright_exposure_value - data.dark_exposure_value < MIN_EXPOSURE_SPAN:
+        data.bright_exposure_value = data.dark_exposure_value + MIN_EXPOSURE_SPAN
     return data
 
 
