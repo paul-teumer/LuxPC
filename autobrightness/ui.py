@@ -40,7 +40,7 @@ SAVE_DELAY_MS = 250
 REFRESH_MS = 500
 MAX_INTERVAL_S = 86400
 MIN_GRAPH_SAMPLES = 60
-CURVE_MARGIN = 10
+CURVE_MARGIN_LEFT, CURVE_MARGIN_TOP, CURVE_MARGIN_RIGHT, CURVE_MARGIN_BOTTOM = 12, 10, 40, 22
 POINT_GRAB_RADIUS = 10
 AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
@@ -68,6 +68,11 @@ def describe_status(status: Status) -> tuple[str, bool]:
     if not status.reliable:
         return "Messgrenze erreicht", True
     return "Aktiv", False
+
+
+def _curve_plot_area(width: int, height: int) -> tuple[int, int, int, int]:
+    """(links, oben, rechts, unten) der Zeichenfläche des Kurvendiagramms ohne Achsenbeschriftung."""
+    return CURVE_MARGIN_LEFT, CURVE_MARGIN_TOP, width - CURVE_MARGIN_RIGHT, height - CURVE_MARGIN_BOTTOM
 
 
 def _color(pair: tuple[str, str]) -> str:
@@ -230,7 +235,7 @@ class SettingsWindow(customtkinter.CTk):
 
     def _build_calibration_card(self, data) -> None:
         card = self._card("Kalibrierung")
-        self._curve = tk.Canvas(card, height=150, highlightthickness=0, bd=0)
+        self._curve = tk.Canvas(card, height=180, highlightthickness=0, bd=0)
         self._curve.pack(fill="x", padx=16, pady=(0, 6))
         self._dragged_point: Optional[int] = None
         self._curve.bind("<Button-1>", self._on_curve_press)
@@ -305,8 +310,9 @@ class SettingsWindow(customtkinter.CTk):
     def _curve_position(self, event_x: int, event_y: int, data) -> tuple[float, float]:
         """(Blendenstufe, Prozent) zu einer Position auf der Zeichenfläche."""
         low, high, width, height = self._curve_geometry(data)
-        exposure_value = low + (event_x - CURVE_MARGIN) / (width - 2 * CURVE_MARGIN) * (high - low)
-        percent = 100 * (height - CURVE_MARGIN - event_y) / (height - 2 * CURVE_MARGIN)
+        left, top, right, bottom = _curve_plot_area(width, height)
+        exposure_value = low + (event_x - left) / (right - left) * (high - low)
+        percent = 100 * (bottom - event_y) / (bottom - top)
         return exposure_value, max(0.0, min(100.0, percent))
 
     def _on_curve_press(self, event) -> None:
@@ -314,10 +320,11 @@ class SettingsWindow(customtkinter.CTk):
         data = self._settings.snapshot()
         low, high, width, height = self._curve_geometry(data)
         self._dragged_point = None
+        left, top, right, bottom = _curve_plot_area(width, height)
         nearest = None
         for index, (exposure_value, percent) in enumerate(data.calibration_points):
-            x = CURVE_MARGIN + (exposure_value - low) / (high - low) * (width - 2 * CURVE_MARGIN)
-            y = height - CURVE_MARGIN - percent / 100 * (height - 2 * CURVE_MARGIN)
+            x = left + (exposure_value - low) / (high - low) * (right - left)
+            y = bottom - percent / 100 * (bottom - top)
             distance = math.hypot(event.x - x, event.y - y)
             if distance <= POINT_GRAB_RADIUS and (nearest is None or distance < nearest[0]):
                 nearest = (distance, index)
@@ -367,15 +374,23 @@ class SettingsWindow(customtkinter.CTk):
         low, high, width, height = self._curve_geometry(data)
         painter = Painter(width, height, _color(GRAPH_BACKGROUND))
 
+        left, top, right, bottom = _curve_plot_area(width, height)
+
         def x_of(exposure_value: float) -> float:
-            return CURVE_MARGIN + (exposure_value - low) / (high - low) * (width - 2 * CURVE_MARGIN)
+            return left + (exposure_value - low) / (high - low) * (right - left)
 
         def y_of(percent: float) -> float:
-            return height - CURVE_MARGIN - percent / 100 * (height - 2 * CURVE_MARGIN)
+            return bottom - percent / 100 * (bottom - top)
 
         for percent in (0, 25, 50, 75, 100):
-            painter.line([CURVE_MARGIN, y_of(percent), width - CURVE_MARGIN, y_of(percent)], _color(GRAPH_GRID))
-        painter.text(width - CURVE_MARGIN, y_of(100) - 2, "100 %", _color(MUTED_TEXT), 9, anchor="rs")
+            painter.line([left, y_of(percent), right, y_of(percent)], _color(GRAPH_GRID))
+            painter.text(right + 7, y_of(percent), f"{percent} %", _color(MUTED_TEXT), 10, anchor="lm")
+        tick = math.ceil(low)
+        while tick <= high:
+            painter.line([x_of(tick), top, x_of(tick), bottom], _color(GRAPH_GRID))
+            painter.text(x_of(tick), bottom + 5, f"{tick}", _color(MUTED_TEXT), 10, anchor="ma")
+            tick += max(1, math.ceil((high - low) / 8))
+        painter.text(right + 7, bottom + 5, "EV", _color(MUTED_TEXT), 10, anchor="la")
 
         samples = 160
         curve = []
