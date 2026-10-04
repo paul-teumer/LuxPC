@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import customtkinter
+from customtkinter.windows.widgets.appearance_mode.appearance_mode_tracker import AppearanceModeTracker
+from customtkinter.windows.widgets.scaling.scaling_tracker import ScalingTracker
 
 from . import __version__, display, startup
 from . import mapping
@@ -43,6 +45,8 @@ MIN_GRAPH_SAMPLES = 60
 CURVE_MARGIN_LEFT, CURVE_MARGIN_TOP, CURVE_MARGIN_RIGHT, CURVE_MARGIN_BOTTOM = 12, 10, 40, 22
 POINT_GRAB_RADIUS = 10
 RESET_CONFIRM_MS = 3000
+VISIBLE_POLL_MS = 30
+HIDDEN_POLL_MS = 1000
 AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
 
@@ -540,12 +544,21 @@ class SettingsWindow(customtkinter.CTk):
         self._commands.put(command)
 
     def show(self) -> None:
+        self._set_polling_interval(VISIBLE_POLL_MS)
+        AppearanceModeTracker.init_appearance_mode()
         self.deiconify()
         self.lift()
         self.focus_force()
 
     def hide(self) -> None:
         self.withdraw()
+        self._set_polling_interval(HIDDEN_POLL_MS)
+
+    @staticmethod
+    def _set_polling_interval(interval_ms: int) -> None:
+        """Die Hell/Dunkel- und Skalierungsabfragen von CustomTkinter sind nur bei sichtbarem Fenster nötig."""
+        AppearanceModeTracker.update_loop_interval = interval_ms
+        ScalingTracker.update_loop_interval = max(interval_ms, 100)
 
     def sync_enabled_switch(self) -> None:
         if self._settings.snapshot().enabled:

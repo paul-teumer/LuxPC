@@ -55,7 +55,7 @@ def main() -> int:
     tray.run_detached()
 
     if "--minimized" in sys.argv:
-        window.withdraw()
+        window.hide()
     try:
         window.mainloop()
     finally:
