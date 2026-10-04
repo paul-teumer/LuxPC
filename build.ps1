@@ -11,8 +11,8 @@ try {
         main.pyw
 }
 finally {
-    # Übrig bleiben soll ausschließlich dist\AutoBrightness.exe.
+    # Übrig bleiben soll ausschließlich AutoBrightness.exe.
     Remove-Item -Recurse -Force dist, build, AutoBrightness.spec, .pytest_cache -ErrorAction SilentlyContinue
     Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
-Write-Host "Fertig: dist\AutoBrightness.exe"
+Write-Host "Fertig: AutoBrightness.exe"
