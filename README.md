@@ -13,7 +13,7 @@ Die `AutoBrightness.exe` läuft auf jedem Windows-10/11-Rechner ohne weitere Ins
 ## Benutzung
 
 - Das Sonnensymbol im Infobereich (neben der Uhr) öffnet mit einem Klick die Einstellungen.
-- **Einmal kalibrieren:** In der dunkelsten gewünschten Umgebung „Jetzt = dunkel“ drücken, in der hellsten „Jetzt = hell“.
+- **Kalibrieren:** Bei dem jeweiligen Licht die passende Helligkeit einstellen und „Als Punkt festlegen“ drücken – beliebig oft bei verschiedenem Licht. Die Kurve durch alle Punkte zeigt die App an; ein Klick hinein setzt ebenfalls einen Punkt.
 - Die Kamera ist nur kurz pro Messung aktiv. Nutzt ein anderes Programm (Zoom, Teams …) die Kamera, pausiert AutoBrightness von selbst.
 
 Die Einstellungen liegen in `%APPDATA%\AutoBrightness\settings.json`.

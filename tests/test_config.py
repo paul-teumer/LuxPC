@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from autobrightness.config import MIN_EXPOSURE_SPAN, Settings, SettingsData, sanitize
+from autobrightness.config import MIN_POINT_DISTANCE, Settings, SettingsData, sanitize
 
 
 def test_defaults_when_file_missing(tmp_path):
@@ -41,9 +41,27 @@ def test_wrong_types_fall_back_to_default(tmp_path):
 
 
 def test_sanitize_keeps_ranges_consistent():
-    data = sanitize(SettingsData(min_brightness_percent=80, max_brightness_percent=20, dark_exposure_value=5, bright_exposure_value=5))
+    data = sanitize(SettingsData(min_brightness_percent=80, max_brightness_percent=20))
     assert data.max_brightness_percent >= data.min_brightness_percent
-    assert data.bright_exposure_value - data.dark_exposure_value == pytest.approx(MIN_EXPOSURE_SPAN)
+
+
+def test_sanitize_sorts_merges_and_limits_calibration_points():
+    data = sanitize(SettingsData(calibration_points=[[8, 120], [2, 30], [2.05, 40], [-50, 10]]))
+    assert data.calibration_points == [[-30.0, 10.0], [2.05, 40.0], [8.0, 100.0]]
+    assert all(b[0] - a[0] >= MIN_POINT_DISTANCE for a, b in zip(data.calibration_points, data.calibration_points[1:]))
+
+
+def test_sanitize_restores_default_for_too_few_or_invalid_points():
+    assert sanitize(SettingsData(calibration_points=[[1, 1]])).calibration_points == SettingsData().calibration_points
+    assert sanitize(SettingsData(calibration_points="x")).calibration_points == SettingsData().calibration_points
+
+
+def test_calibration_points_roundtrip_and_legacy_migration(tmp_path):
+    path = tmp_path / "settings.json"
+    Settings(path).update(calibration_points=[[0, 5], [3, 50], [9, 90]])
+    assert Settings(path).snapshot().calibration_points == [[0.0, 5.0], [3.0, 50.0], [9.0, 90.0]]
+    path.write_text(json.dumps({"dark_exposure_value": -2.0, "bright_exposure_value": 6.0, "min_brightness_percent": 20}), encoding="utf-8")
+    assert Settings(path).snapshot().calibration_points == [[-2.0, 20.0], [6.0, 100.0]]
 
 
 def test_listeners_are_notified(tmp_path):

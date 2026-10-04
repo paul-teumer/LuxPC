@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -23,16 +23,17 @@ class SettingsData:
     measure_interval_s: float = 10.0
     response_time_s: float = 20.0
     hysteresis_percent: int = 2
-    dark_exposure_value: float = 1.0
-    bright_exposure_value: float = 8.0
+    calibration_points: list[list[float]] = field(default_factory=lambda: [[1.0, 10.0], [8.0, 100.0]])
     min_brightness_percent: int = 10
     max_brightness_percent: int = 100
     brightness_offset_percent: int = 0
     night_shift_percent: int = 0
 
 
-# Kleinster Abstand zwischen dunklem und hellem Referenzpunkt (sonst Division durch null).
-MIN_EXPOSURE_SPAN = 0.1
+# Kleinster Abstand zweier Kalibrierpunkte in Blendenstufen; näher liegende Punkte werden zusammengefasst.
+MIN_POINT_DISTANCE = 0.1
+MIN_CALIBRATION_POINTS = 2
+EXPOSURE_VALUE_RANGE = (-30.0, 20.0)
 
 # (Minimum, Maximum) je numerischem Feld; Werte außerhalb werden begrenzt.
 LIMITS: dict[str, tuple[float, float]] = {
@@ -40,8 +41,6 @@ LIMITS: dict[str, tuple[float, float]] = {
     "measure_interval_s": (2.0, 86400.0),
     "response_time_s": (0.0, 86400.0),
     "hysteresis_percent": (0, 50),
-    "dark_exposure_value": (-30.0, 20.0),
-    "bright_exposure_value": (-30.0, 20.0),
     "min_brightness_percent": (0, 100),
     "max_brightness_percent": (0, 100),
     "brightness_offset_percent": (-100, 100),
@@ -56,9 +55,24 @@ def sanitize(data: SettingsData) -> SettingsData:
         setattr(data, name, type(current)(clamped))
     if data.max_brightness_percent < data.min_brightness_percent:
         data.max_brightness_percent = data.min_brightness_percent
-    if data.bright_exposure_value - data.dark_exposure_value < MIN_EXPOSURE_SPAN:
-        data.bright_exposure_value = data.dark_exposure_value + MIN_EXPOSURE_SPAN
+    data.calibration_points = _sanitize_points(data.calibration_points)
     return data
+
+
+def _sanitize_points(raw) -> list[list[float]]:
+    """Sortiert nach Blendenstufe, begrenzt Werte, fasst zu nahe Punkte zusammen (der spätere gewinnt)."""
+    points: list[list[float]] = []
+    try:
+        for exposure_value, percent in sorted((float(entry[0]), float(entry[1])) for entry in raw):
+            exposure_value = max(EXPOSURE_VALUE_RANGE[0], min(EXPOSURE_VALUE_RANGE[1], exposure_value))
+            point = [round(exposure_value, 2), round(max(0.0, min(100.0, percent)), 1)]
+            if points and point[0] - points[-1][0] < MIN_POINT_DISTANCE:
+                points[-1] = point
+            else:
+                points.append(point)
+    except (TypeError, ValueError, IndexError):
+        return SettingsData().calibration_points
+    return points if len(points) >= MIN_CALIBRATION_POINTS else SettingsData().calibration_points
 
 
 class Settings:
@@ -85,6 +99,14 @@ class Settings:
                     setattr(data, name, value if default is None else type(default)(value))
                 except (TypeError, ValueError):
                     pass
+        points = raw.get("calibration_points")
+        if isinstance(points, list):
+            data.calibration_points = points
+        elif isinstance(raw.get("dark_exposure_value"), (int, float)) and isinstance(raw.get("bright_exposure_value"), (int, float)):
+            data.calibration_points = [
+                [raw["dark_exposure_value"], data.min_brightness_percent],
+                [raw["bright_exposure_value"], data.max_brightness_percent],
+            ]
         with self._lock:
             self._data = sanitize(data)
 

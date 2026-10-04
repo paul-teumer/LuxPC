@@ -8,15 +8,21 @@ from typing import Optional
 from .config import SettingsData
 
 
+def curve_brightness(exposure_value: float, points: list[list[float]]) -> float:
+    """Stückweise lineare Kurve durch die (nach Blendenstufe sortierten) Kalibrierpunkte; außerhalb konstant."""
+    if exposure_value <= points[0][0]:
+        return points[0][1]
+    for (left_ev, left_percent), (right_ev, right_percent) in zip(points, points[1:]):
+        if exposure_value <= right_ev:
+            ratio = (exposure_value - left_ev) / (right_ev - left_ev)
+            return left_percent + ratio * (right_percent - left_percent)
+    return points[-1][1]
+
+
 def target_brightness(exposure_value: float, settings: SettingsData) -> float:
-    """Lineare Abbildung in Blendenstufen: dunkel -> Minimum, hell -> Maximum, plus Versatz."""
-    span = settings.bright_exposure_value - settings.dark_exposure_value
-    ratio = (exposure_value - settings.dark_exposure_value) / span
-    ratio = max(0.0, min(1.0, ratio))
-    minimum = settings.min_brightness_percent
-    maximum = settings.max_brightness_percent
-    value = minimum + ratio * (maximum - minimum) + settings.brightness_offset_percent
-    return max(0.0, min(100.0, value))
+    """Kalibrierkurve plus Versatz, begrenzt auf Minimum und Maximum."""
+    value = curve_brightness(exposure_value, settings.calibration_points) + settings.brightness_offset_percent
+    return max(float(settings.min_brightness_percent), min(float(settings.max_brightness_percent), value))
 
 
 class ExposureValueSmoother:

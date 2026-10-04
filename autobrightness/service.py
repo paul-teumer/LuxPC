@@ -11,7 +11,7 @@ from typing import Callable, Optional
 
 from . import camera_usage, display, mapping
 from .camera import CameraError, CameraInUseError, ExposureMeterCamera
-from .config import Settings
+from .config import MIN_CALIBRATION_POINTS, MIN_POINT_DISTANCE, Settings
 
 TICK_S = 1.0
 RAMP_TICK_S = 0.1
@@ -76,14 +76,20 @@ class BrightnessService:
             self._thread.join(timeout=5)
         self._apply_night_light(0)
 
-    def calibrate(self, dark: bool) -> bool:
-        """Übernimmt die letzte Messung als dunklen bzw. hellen Referenzpunkt."""
+    def add_calibration_point(self, percent: float) -> bool:
+        """Fügt die letzte Messung mit der gewünschten Helligkeit als Kalibrierpunkt hinzu (ersetzt einen nahen Punkt)."""
         current = self.status.raw_exposure_value
         if current is None:
             return False
-        key = "dark_exposure_value" if dark else "bright_exposure_value"
-        self._settings.update(**{key: round(current, 2)})
+        points = [point for point in self._settings.snapshot().calibration_points if abs(point[0] - current) >= MIN_POINT_DISTANCE]
+        self._settings.update(calibration_points=points + [[current, percent]])
         return True
+
+    def remove_calibration_point(self, index: int) -> None:
+        points = self._settings.snapshot().calibration_points
+        if len(points) > MIN_CALIBRATION_POINTS and 0 <= index < len(points):
+            del points[index]
+            self._settings.update(calibration_points=points)
 
     def _camera_is_free(self) -> bool:
         users = self._find_camera_users()

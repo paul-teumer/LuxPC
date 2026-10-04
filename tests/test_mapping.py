@@ -8,8 +8,7 @@ from autobrightness.config import SettingsData
 
 def settings(**changes) -> SettingsData:
     return SettingsData(
-        dark_exposure_value=0.0,
-        bright_exposure_value=10.0,
+        calibration_points=[[0.0, 10.0], [10.0, 90.0]],
         min_brightness_percent=10,
         max_brightness_percent=90,
         **changes,
@@ -27,10 +26,17 @@ def test_mapping_is_linear_in_stops():
     assert mapping.target_brightness(5, settings()) == pytest.approx(50)
 
 
-def test_offset_shifts_and_stays_within_percent_range():
+def test_curve_follows_multiple_points():
+    data = SettingsData(calibration_points=[[0.0, 5.0], [4.0, 20.0], [10.0, 100.0]], min_brightness_percent=0)
+    assert mapping.target_brightness(4, data) == pytest.approx(20)
+    assert mapping.target_brightness(2, data) == pytest.approx(12.5)
+    assert mapping.target_brightness(7, data) == pytest.approx(60)
+
+
+def test_offset_shifts_and_stays_within_limits():
     assert mapping.target_brightness(5, settings(brightness_offset_percent=10)) == pytest.approx(60)
-    assert mapping.target_brightness(10, settings(brightness_offset_percent=30)) == 100
-    assert mapping.target_brightness(0, settings(brightness_offset_percent=-30)) == 0
+    assert mapping.target_brightness(10, settings(brightness_offset_percent=30)) == 90
+    assert mapping.target_brightness(0, settings(brightness_offset_percent=-30)) == 10
 
 
 def test_smoother_first_sample_is_taken_over():

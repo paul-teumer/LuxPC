@@ -43,7 +43,7 @@ def wait_for(condition, timeout=4.0):
 def make_service(tmp_path, camera, camera_users=lambda: [], current_brightness=None, **settings_changes):
     settings = Settings(tmp_path / "settings.json")
     settings.update(
-        response_time_s=0.0, dark_exposure_value=0.0, bright_exposure_value=10.0,
+        response_time_s=0.0, calibration_points=[[0.0, 0.0], [10.0, 100.0]],
         min_brightness_percent=0, max_brightness_percent=100, **settings_changes,
     )
     applied, night_light = [], []
@@ -143,8 +143,10 @@ def test_calibration_takes_latest_raw_measurement(tmp_path):
     service.start()
     try:
         assert wait_for(lambda: applied)
-        assert service.calibrate(dark=True)
-        assert settings.snapshot().dark_exposure_value == 3.37
+        assert service.add_calibration_point(42)
+        assert [3.37, 42.0] in settings.snapshot().calibration_points
+        service.remove_calibration_point(0)
+        assert len(settings.snapshot().calibration_points) == 2
     finally:
         service.stop()
 

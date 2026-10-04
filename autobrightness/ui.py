@@ -13,7 +13,8 @@ from typing import Callable, Optional
 import customtkinter
 
 from . import __version__, display, startup
-from .config import Settings
+from . import mapping
+from .config import MIN_CALIBRATION_POINTS, MIN_POINT_DISTANCE, Settings
 from .icon import apply_window_icon, write_ico
 from .service import BrightnessService, Status
 
@@ -38,6 +39,7 @@ SAVE_DELAY_MS = 250
 REFRESH_MS = 500
 MAX_INTERVAL_S = 86400
 MIN_GRAPH_SAMPLES = 60
+CURVE_MARGIN = 10
 AUTO_MONITOR_LABEL = "Alle Bildschirme"
 
 
@@ -226,20 +228,114 @@ class SettingsWindow(customtkinter.CTk):
 
     def _build_calibration_card(self, data) -> None:
         card = self._card("Kalibrierung")
-        buttons = customtkinter.CTkFrame(card, fg_color="transparent")
-        buttons.pack(fill="x", padx=16, pady=(0, 4))
-        buttons.columnconfigure((0, 1), weight=1, uniform="calibration")
-        for column, (dark, label) in enumerate(((True, "Jetzt = dunkel"), (False, "Jetzt = hell"))):
-            button = customtkinter.CTkButton(
-                buttons, text=label, height=32, corner_radius=9, font=_font(13, "bold"),
-                fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
-                command=lambda is_dark=dark: self._service.calibrate(is_dark),
-            )
-            button.grid(row=0, column=column, padx=(0, 4) if column == 0 else (4, 0), sticky="ew")
-        self._calibration_label = customtkinter.CTkLabel(
-            card, text="", text_color=MUTED_TEXT, font=_font(11)
+        self._curve = tk.Canvas(card, height=150, highlightthickness=0, bd=0)
+        self._curve.pack(fill="x", padx=16, pady=(0, 6))
+        self._curve.bind("<Button-1>", self._on_curve_click)
+
+        chooser = customtkinter.CTkFrame(card, fg_color="transparent")
+        chooser.pack(fill="x", padx=16, pady=(0, 4))
+        self._point_percent = 50.0
+        self._point_percent_touched = False
+        self._point_percent_label = customtkinter.CTkLabel(
+            chooser, text="", width=44, text_color=TEXT_COLOR, font=_font(13, "bold"), anchor="e"
         )
-        self._calibration_label.pack(pady=(0, 10))
+        self._point_percent_label.pack(side="right")
+        self._point_slider = customtkinter.CTkSlider(
+            chooser, from_=0, to=100, number_of_steps=100, progress_color=ACCENT,
+            button_color=ACCENT, button_hover_color=ACCENT_HOVER, command=self._on_point_slider,
+        )
+        self._point_slider.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self._point_slider.set(self._point_percent)
+        self._point_percent_label.configure(text=f"{int(self._point_percent)} %")
+
+        customtkinter.CTkButton(
+            card, text="Jetzt mit dieser Helligkeit als Punkt festlegen", height=32, corner_radius=9,
+            font=_font(13, "bold"), fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
+            command=lambda: self._service.add_calibration_point(self._point_percent),
+        ).pack(fill="x", padx=16, pady=(2, 6))
+        customtkinter.CTkLabel(
+            card, text="Passende Helligkeit für das jetzige Licht einstellen und festlegen – beliebig oft "
+            "bei verschiedenem Licht. Ein Klick in die Kurve setzt dort einen Punkt.",
+            text_color=MUTED_TEXT, font=_font(11), wraplength=380, justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 6))
+        self._points_frame = customtkinter.CTkFrame(card, fg_color="transparent")
+        self._points_frame.pack(fill="x", padx=16, pady=(0, 10))
+        self._listed_points: Optional[list] = None
+
+    def _on_point_slider(self, value: float) -> None:
+        self._point_percent = float(round(value))
+        self._point_percent_touched = True
+        self._point_percent_label.configure(text=f"{int(self._point_percent)} %")
+
+    def _curve_bounds(self, data) -> tuple[float, float]:
+        values = [point[0] for point in data.calibration_points]
+        current = self._service.status.exposure_value
+        if current is not None:
+            values.append(current)
+        return min(values) - 0.5, max(values) + 0.5
+
+    def _on_curve_click(self, event) -> None:
+        data = self._settings.snapshot()
+        low, high = self._curve_bounds(data)
+        width, height = max(self._curve.winfo_width(), 50), max(self._curve.winfo_height(), 50)
+        exposure_value = low + (event.x - CURVE_MARGIN) / (width - 2 * CURVE_MARGIN) * (high - low)
+        percent = 100 * (height - CURVE_MARGIN - event.y) / (height - 2 * CURVE_MARGIN)
+        points = [point for point in data.calibration_points if abs(point[0] - exposure_value) >= MIN_POINT_DISTANCE]
+        self._settings.update(calibration_points=points + [[exposure_value, max(0.0, min(100.0, percent))]])
+
+    def _update_point_list(self, points) -> None:
+        if points == self._listed_points:
+            return
+        self._listed_points = [list(point) for point in points]
+        for child in self._points_frame.winfo_children():
+            child.destroy()
+        removable = len(points) > MIN_CALIBRATION_POINTS
+        for index, (exposure_value, percent) in enumerate(points):
+            row = customtkinter.CTkFrame(self._points_frame, fg_color="transparent")
+            row.pack(fill="x")
+            customtkinter.CTkLabel(
+                row, text=f"{exposure_value:.1f} EV   →   {percent:.0f} %", text_color=TEXT_COLOR, font=_font(12)
+            ).pack(side="left")
+            customtkinter.CTkButton(
+                row, text="✕", width=26, height=22, corner_radius=6, font=_font(11),
+                fg_color=FIELD_COLOR, hover_color=FIELD_HOVER, text_color=TEXT_COLOR,
+                state="normal" if removable else "disabled",
+                command=lambda position=index: self._service.remove_calibration_point(position),
+            ).pack(side="right", pady=1)
+
+    def _draw_curve(self, data) -> None:
+        canvas = self._curve
+        canvas.configure(bg=_color(GRAPH_BACKGROUND))
+        canvas.delete("all")
+        width, height = max(canvas.winfo_width(), 50), max(canvas.winfo_height(), 50)
+        low, high = self._curve_bounds(data)
+
+        def x_of(exposure_value: float) -> float:
+            return CURVE_MARGIN + (exposure_value - low) / (high - low) * (width - 2 * CURVE_MARGIN)
+
+        def y_of(percent: float) -> float:
+            return height - CURVE_MARGIN - percent / 100 * (height - 2 * CURVE_MARGIN)
+
+        for percent in (0, 25, 50, 75, 100):
+            canvas.create_line(CURVE_MARGIN, y_of(percent), width - CURVE_MARGIN, y_of(percent), fill=_color(GRAPH_GRID))
+        canvas.create_text(width - CURVE_MARGIN, y_of(100) - 1, text="100 %", anchor="se", fill=_color(MUTED_TEXT), font=_font(9))
+
+        samples = 120
+        curve = []
+        for index in range(samples + 1):
+            exposure_value = low + (high - low) * index / samples
+            curve += [x_of(exposure_value), y_of(mapping.target_brightness(exposure_value, data))]
+        canvas.create_line(*curve, fill=_color(BRIGHTNESS_LINE), width=2)
+
+        for exposure_value, percent in data.calibration_points:
+            x, y = x_of(exposure_value), y_of(percent)
+            canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill=_color(CARD_COLOR), outline=_color(BRIGHTNESS_LINE), width=2)
+
+        current = self._service.status.exposure_value
+        if current is not None:
+            x, y = x_of(current), y_of(mapping.target_brightness(current, data))
+            canvas.create_line(x, y_of(100), x, y_of(0), fill=_color(AMBIENT_LINE), dash=(3, 3))
+            canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill=_color(AMBIENT_LINE), outline="")
 
     def _build_system_row(self) -> None:
         row = customtkinter.CTkFrame(
@@ -368,11 +464,14 @@ class SettingsWindow(customtkinter.CTk):
             self._brightness_label.configure(text=f"{status.applied_percent} %")
             self._ambient_label.configure(text=f"Umgebungslicht {status.exposure_value:.1f} EV")
             self._shutter_label.configure(text=f"Belichtung {format_shutter(status.exposure_log2_seconds)}")
-            span = data.bright_exposure_value - data.dark_exposure_value
-            self._ambient_bar.set(max(0.0, min(1.0, (status.exposure_value - data.dark_exposure_value) / span)))
-        self._calibration_label.configure(
-            text=f"dunkel {data.dark_exposure_value:.1f} EV   ·   hell {data.bright_exposure_value:.1f} EV"
-        )
+            dark, bright = data.calibration_points[0][0], data.calibration_points[-1][0]
+            self._ambient_bar.set(max(0.0, min(1.0, (status.exposure_value - dark) / (bright - dark))))
+        if not self._point_percent_touched and status.applied_percent is not None:
+            self._point_slider.set(status.applied_percent)
+            self._point_percent = float(status.applied_percent)
+            self._point_percent_label.configure(text=f"{status.applied_percent} %")
+        self._update_point_list(data.calibration_points)
+        self._draw_curve(data)
         self._draw_graph(data)
 
     def _draw_graph(self, data) -> None:
@@ -385,8 +484,8 @@ class SettingsWindow(customtkinter.CTk):
         history = list(self._service.history)
         if len(history) < 2:
             return
-        low = min(data.dark_exposure_value, min(entry[1] for entry in history)) - 0.5
-        high = max(data.bright_exposure_value, max(entry[1] for entry in history)) + 0.5
+        low = min(data.calibration_points[0][0], min(entry[1] for entry in history)) - 0.5
+        high = max(data.calibration_points[-1][0], max(entry[1] for entry in history)) + 0.5
         step = width / (max(len(history), MIN_GRAPH_SAMPLES) - 1)
 
         def line(values: list[float], color: str) -> None:
