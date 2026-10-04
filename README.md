@@ -31,7 +31,7 @@ pip install -r requirements.txt
 python main.pyw
 ```
 
-Eine eigenständige `AutoBrightness.exe` entsteht mit `./build.ps1` (Ergebnis in `dist/`).
+Eine eigenständige `AutoBrightness.exe` entsteht mit `build.bat` (Ergebnis: `AutoBrightness.exe` im Projektordner).
 
 ## Bedienung
 
