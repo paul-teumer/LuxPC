@@ -1,7 +1,7 @@
 import time
 
 import autobrightness.service as service_module
-from autobrightness.camera import CameraError, Reading
+from autobrightness.camera import CameraError, CameraInUseError, Reading
 from autobrightness.config import Settings
 from autobrightness.service import BrightnessService
 
@@ -20,8 +20,10 @@ class FakeCamera:
         self.open_count += 1
         self.is_open = True
 
-    def measure(self) -> Reading:
+    def measure(self, is_camera_free=lambda: True) -> Reading:
         assert self.is_open
+        if not is_camera_free():
+            raise CameraInUseError("belegt")
         return Reading(self.exposure_value, -8, 0.5, True, True)
 
     def close(self) -> None:
@@ -175,5 +177,19 @@ def test_brightness_starts_at_current_value_and_moves_in_single_steps(tmp_path):
     try:
         assert wait_for(lambda: len(applied) >= 5)
         assert applied[:5] == [41, 42, 43, 44, 45]
+    finally:
+        service.stop()
+
+
+def test_measurement_is_aborted_and_camera_released_when_another_application_starts_midway(tmp_path, monkeypatch):
+    monkeypatch.setattr(service_module, "RETRY_DELAY_S", 0.1)
+    answers = iter([[], ["Zoom.exe"]])
+    camera = FakeCamera(5.0)
+    _, service, applied, _ = make_service(tmp_path, camera, camera_users=lambda: next(answers, ["Zoom.exe"]))
+    service.start()
+    try:
+        assert wait_for(lambda: service.status.state == "busy" and camera.close_count >= 1)
+        assert service.status.message == "Zoom.exe"
+        assert not camera.is_open and not applied
     finally:
         service.stop()

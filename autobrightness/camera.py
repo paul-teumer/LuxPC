@@ -10,7 +10,7 @@ from __future__ import annotations
 import statistics
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import cv2
 
@@ -27,6 +27,10 @@ FALLBACK_EXPOSURE_LOG2_SECONDS = -6
 
 class CameraError(RuntimeError):
     pass
+
+
+class CameraInUseError(CameraError):
+    """Ein anderes Programm hat die Kamera während der Messung geöffnet."""
 
 
 @dataclass(frozen=True)
@@ -88,12 +92,24 @@ class ExposureMeterCamera:
         small = cv2.resize(frame, (160, 120), interpolation=cv2.INTER_AREA)
         return cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
-    def measure(self) -> Reading:
-        """Regelt die Belichtung ein und liefert den Median mehrerer Einzelbilder."""
+    def measure(self, is_camera_free: Callable[[], bool] = lambda: True) -> Reading:
+        """Regelt die Belichtung ein und liefert den Median mehrerer Einzelbilder.
+
+        Vor jedem Schritt wird geprüft, ob die Kamera noch uns allein gehört; sonst
+        bricht die Messung sofort ab, damit die Belichtung des anderen Programms
+        nicht durch unsere Einstellung gestört wird.
+        """
         if self._capture is None or self._exposure is None:
             raise CameraError("Kamera nicht geöffnet")
+
+        def ensure_camera_free() -> None:
+            if not is_camera_free():
+                raise CameraInUseError("Kamera von anderem Programm belegt")
+
+        ensure_camera_free()
         frame_statistics = metering.frame_statistics(self._grab_gray(SETTLE_FRAMES))
         for _ in range(MAX_ADJUSTMENTS):
+            ensure_camera_free()
             wanted = metering.next_exposure(
                 frame_statistics, self._exposure, self._minimum, self._maximum
             )
@@ -106,6 +122,7 @@ class ExposureMeterCamera:
 
         samples = [frame_statistics]
         for _ in range(AVERAGED_FRAMES - 1):
+            ensure_camera_free()
             samples.append(metering.frame_statistics(self._grab_gray(1)))
         exposure_values = [
             metering.exposure_value(sample.linear_level, self._exposure) for sample in samples

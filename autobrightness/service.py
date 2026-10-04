@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from . import camera_usage, display, mapping
-from .camera import CameraError, ExposureMeterCamera
+from .camera import CameraError, CameraInUseError, ExposureMeterCamera
 from .config import Settings
 
 TICK_S = 1.0
@@ -84,15 +84,21 @@ class BrightnessService:
         self._settings.update(**{key: round(current, 2)})
         return True
 
-    def _measure(self, camera: ExposureMeterCamera):
-        """Eine Messung mit sofortiger Freigabe der Kamera; None, wenn sie nicht möglich ist."""
+    def _camera_is_free(self) -> bool:
         users = self._find_camera_users()
         if users:
             self._publish(state="busy", message=", ".join(users))
+        return not users
+
+    def _measure(self, camera: ExposureMeterCamera):
+        """Eine Messung mit sofortiger Freigabe der Kamera; None, wenn sie nicht möglich ist."""
+        if not self._camera_is_free():
             return None
         try:
             camera.open()
-            return camera.measure()
+            return camera.measure(self._camera_is_free)
+        except CameraInUseError:
+            return None
         except CameraError:
             self._publish(state="busy", message="")
             return None
