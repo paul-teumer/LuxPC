@@ -46,4 +46,4 @@ def test_reset_keeps_language(tmp_path):
     settings.update(language="en", min_brightness_percent=40)
     settings.reset()
     assert settings.snapshot().language == "en"
-    assert settings.snapshot().min_brightness_percent == 10
+    assert settings.snapshot().min_brightness_percent == 0

@@ -75,7 +75,7 @@ def test_listeners_are_notified(tmp_path):
 def test_default_calibration_points_form_a_sigmoid():
     points = SettingsData().calibration_points
     percents = [percent for _, percent in points]
-    assert percents[0] == 10.0 and percents[-1] == 100.0
+    assert percents[0] == 0.0 and percents[-1] == 100.0
     assert percents == sorted(percents)
     steps = [b - a for a, b in zip(percents, percents[1:])]
     assert max(steps) in steps[2:4] and steps[0] < max(steps) > steps[-1]

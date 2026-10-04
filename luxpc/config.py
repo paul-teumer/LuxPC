@@ -19,7 +19,7 @@ def default_config_path() -> Path:
 
 
 def default_calibration_points() -> list[list[float]]:
-    """Sigmoid-Kurve (logistisch, Mitte bei 2 EV) von 10 % bis 100 %, an den Rändern exakt normiert."""
+    """Sigmoid-Kurve (logistisch, Mitte bei 2 EV) von 0 % bis 100 %, an den Rändern exakt normiert."""
     first, last, count, midpoint, steepness = -4.0, 8.0, 7, 2.0, 0.7
 
     def logistic(exposure_value: float) -> float:
@@ -29,7 +29,7 @@ def default_calibration_points() -> list[list[float]]:
     for index in range(count):
         exposure_value = first + (last - first) * index / (count - 1)
         ratio = (logistic(exposure_value) - logistic(first)) / (logistic(last) - logistic(first))
-        points.append([exposure_value, round(10 + 90 * ratio, 1)])
+        points.append([exposure_value, round(100 * ratio, 1)])
     return points
 
 
@@ -42,7 +42,7 @@ class SettingsData:
     response_time_s: float = 20.0
     hysteresis_percent: int = 2
     calibration_points: list[list[float]] = field(default_factory=lambda: default_calibration_points())
-    min_brightness_percent: int = 10
+    min_brightness_percent: int = 0
     max_brightness_percent: int = 100
     brightness_offset_percent: int = 0
     night_shift_percent: int = 0
