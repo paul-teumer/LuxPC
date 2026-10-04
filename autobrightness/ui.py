@@ -83,7 +83,7 @@ class SettingsWindow(customtkinter.CTk):
         self._pending_saves: dict[str, str] = {}
 
         self.title("AutoBrightness")
-        self.geometry("470x480")
+        self.geometry("470x650")
         self.minsize(430, 360)
         self.protocol("WM_DELETE_WINDOW", self.hide)
         self._icon_image = tk.PhotoImage(master=self, data=render_icon(64, png_base64=True))
