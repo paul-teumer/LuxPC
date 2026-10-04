@@ -1,7 +1,13 @@
-"""Webcam als Belichtungsmesser: regelt die Belichtungszeit und liefert den Umgebungslichtwert."""
+"""Webcam als Belichtungsmesser: regelt die Belichtungszeit und liefert den Umgebungslichtwert.
+
+Die Kamera wird nur für die Dauer einer Messung gehalten: Solange ein
+DirectShow-Zugriff besteht, erhalten andere Programme (Media Foundation:
+Teams, Zoom, Browser) kein Bild.
+"""
 
 from __future__ import annotations
 
+import statistics
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -12,9 +18,10 @@ from . import metering
 from .dshow import CameraExposureControl
 
 SETTLE_FRAMES = 4
-WARMUP_FRAMES = 15
+WARMUP_FRAMES = 8
 SETTLE_SECONDS = 0.15
 MAX_ADJUSTMENTS = 5
+AVERAGED_FRAMES = 5
 FALLBACK_EXPOSURE_LOG2_SECONDS = -6
 
 
@@ -32,25 +39,28 @@ class Reading:
 
 
 class ExposureMeterCamera:
+    """Merkt sich die zuletzt passende Belichtung, damit jede Messung nahe am Ziel startet."""
+
     def __init__(self, camera_index: int) -> None:
         self.camera_index = camera_index
         self._capture: Optional[cv2.VideoCapture] = None
         self._control: Optional[CameraExposureControl] = None
         self._minimum = self._maximum = FALLBACK_EXPOSURE_LOG2_SECONDS
-        self._exposure = FALLBACK_EXPOSURE_LOG2_SECONDS
+        self._exposure: Optional[int] = None
 
     def open(self) -> None:
         capture = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
         if not capture.isOpened():
             capture.release()
-            raise CameraError("Kamera nicht verfügbar")
+            raise CameraError("Kamera belegt oder nicht verfügbar")
         self._capture = capture
         try:
             self._control = CameraExposureControl(self.camera_index)
             self._minimum, self._maximum, _, default = self._control.exposure_range()
             if self._minimum >= self._maximum:
                 raise CameraError("Belichtung nicht einstellbar")
-            self._exposure = default
+            start = default if self._exposure is None else self._exposure
+            self._exposure = max(self._minimum, min(self._maximum, start))
             self._control.set_manual(self._exposure)
         except Exception:
             self._discard_control()
@@ -64,7 +74,8 @@ class ExposureMeterCamera:
         if self._control is not None:
             self._control.close()
         self._control = None
-        self._minimum = self._maximum = self._exposure = FALLBACK_EXPOSURE_LOG2_SECONDS
+        self._minimum = self._maximum = FALLBACK_EXPOSURE_LOG2_SECONDS
+        self._exposure = FALLBACK_EXPOSURE_LOG2_SECONDS
 
     def _grab_gray(self, frames_to_discard: int):
         assert self._capture is not None
@@ -78,31 +89,39 @@ class ExposureMeterCamera:
         return cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
     def measure(self) -> Reading:
-        if self._capture is None:
+        """Regelt die Belichtung ein und liefert den Median mehrerer Einzelbilder."""
+        if self._capture is None or self._exposure is None:
             raise CameraError("Kamera nicht geöffnet")
-        frames_to_discard = SETTLE_FRAMES
-        statistics = metering.frame_statistics(self._grab_gray(frames_to_discard))
+        frame_statistics = metering.frame_statistics(self._grab_gray(SETTLE_FRAMES))
         for _ in range(MAX_ADJUSTMENTS):
             wanted = metering.next_exposure(
-                statistics, self._exposure, self._minimum, self._maximum
+                frame_statistics, self._exposure, self._minimum, self._maximum
             )
             if wanted == self._exposure or self._control is None:
                 break
             self._control.set_manual(wanted)
             self._exposure = wanted
             time.sleep(SETTLE_SECONDS)
-            statistics = metering.frame_statistics(self._grab_gray(SETTLE_FRAMES))
+            frame_statistics = metering.frame_statistics(self._grab_gray(SETTLE_FRAMES))
+
+        samples = [frame_statistics]
+        for _ in range(AVERAGED_FRAMES - 1):
+            samples.append(metering.frame_statistics(self._grab_gray(1)))
+        exposure_values = [
+            metering.exposure_value(sample.linear_level, self._exposure) for sample in samples
+        ]
         return Reading(
-            exposure_value=metering.exposure_value(statistics.linear_level, self._exposure),
+            exposure_value=statistics.median(exposure_values),
             exposure_log2_seconds=self._exposure,
-            mean_level=statistics.mean_level,
+            mean_level=statistics.median(sample.mean_level for sample in samples),
             reliable=metering.reading_is_reliable(
-                statistics, self._exposure, self._minimum, self._maximum
+                frame_statistics, self._exposure, self._minimum, self._maximum
             ),
             exposure_control_available=self._control is not None,
         )
 
     def close(self) -> None:
+        """Gibt die Kamera frei und stellt die Belichtungsautomatik wieder her."""
         if self._control is not None:
             try:
                 self._control.set_auto()

@@ -20,20 +20,33 @@ def target_brightness(exposure_value: float, settings: SettingsData) -> float:
 
 
 class ExposureValueSmoother:
-    """Exponentielle Glättung mit zeitunabhängiger Zeitkonstante."""
+    """Exponentielle Glättung mit zeitunabhängiger Zeitkonstante.
+
+    Messwerte kommen selten; zwischen ihnen läuft der Wert kontinuierlich auf den
+    letzten Messwert zu, sodass die Helligkeit weich nachgeführt wird.
+    """
 
     def __init__(self) -> None:
         self._value: Optional[float] = None
+        self._sample: Optional[float] = None
 
     def reset(self) -> None:
         self._value = None
+        self._sample = None
 
-    def update(self, sample: float, elapsed_s: float, response_time_s: float) -> float:
-        if self._value is None or response_time_s <= 0:
+    def set_sample(self, sample: float) -> None:
+        self._sample = sample
+        if self._value is None:
             self._value = sample
+
+    def advance(self, elapsed_s: float, response_time_s: float) -> Optional[float]:
+        if self._sample is None:
+            return None
+        if response_time_s <= 0:
+            self._value = self._sample
         else:
             weight = 1.0 - math.exp(-elapsed_s / response_time_s)
-            self._value += weight * (sample - self._value)
+            self._value += weight * (self._sample - self._value)
         return self._value
 
 

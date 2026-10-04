@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from autobrightness import mapping
@@ -33,31 +35,38 @@ def test_offset_shifts_and_stays_within_percent_range():
 
 def test_smoother_first_sample_is_taken_over():
     smoother = mapping.ExposureValueSmoother()
-    assert smoother.update(5.0, 1.0, 4.0) == 5.0
+    assert smoother.advance(1.0, 4.0) is None
+    smoother.set_sample(5.0)
+    assert smoother.advance(1.0, 4.0) == 5.0
 
 
 def test_smoother_follows_time_constant():
     smoother = mapping.ExposureValueSmoother()
-    smoother.update(0.0, 1.0, 4.0)
-    value = smoother.update(10.0, 4.0, 4.0)
-    assert value == pytest.approx(10 * (1 - 2.718281828 ** -1), abs=1e-3)
+    smoother.set_sample(0.0)
+    smoother.advance(1.0, 4.0)
+    smoother.set_sample(10.0)
+    assert smoother.advance(4.0, 4.0) == pytest.approx(10 * (1 - math.exp(-1)), abs=1e-6)
 
 
 def test_smoother_is_step_size_independent():
     coarse = mapping.ExposureValueSmoother()
     fine = mapping.ExposureValueSmoother()
-    coarse.update(0.0, 1.0, 4.0)
-    fine.update(0.0, 1.0, 4.0)
-    coarse_value = coarse.update(10.0, 2.0, 4.0)
+    for smoother in (coarse, fine):
+        smoother.set_sample(0.0)
+        smoother.advance(1.0, 4.0)
+        smoother.set_sample(10.0)
+    coarse_value = coarse.advance(2.0, 4.0)
     for _ in range(4):
-        fine_value = fine.update(10.0, 0.5, 4.0)
+        fine_value = fine.advance(0.5, 4.0)
     assert coarse_value == pytest.approx(fine_value, abs=1e-6)
 
 
 def test_zero_response_time_disables_smoothing():
     smoother = mapping.ExposureValueSmoother()
-    smoother.update(0.0, 1.0, 0.0)
-    assert smoother.update(7.0, 1.0, 0.0) == 7.0
+    smoother.set_sample(0.0)
+    smoother.advance(1.0, 0.0)
+    smoother.set_sample(7.0)
+    assert smoother.advance(1.0, 0.0) == 7.0
 
 
 @pytest.mark.parametrize(

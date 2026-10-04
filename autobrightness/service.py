@@ -8,17 +8,18 @@ from collections import deque
 from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
-from . import display, mapping
+from . import camera_usage, display, mapping
 from .camera import CameraError, ExposureMeterCamera
 from .config import Settings
 
-RETRY_DELAY_S = 3.0
+TICK_S = 1.0
+RETRY_DELAY_S = 5.0
 HISTORY_LENGTH = 240
 
 
 @dataclass(frozen=True)
 class Status:
-    state: str = "starting"  # starting | running | disabled | error
+    state: str = "starting"  # starting | running | disabled | busy | error
     message: str = ""
     exposure_value: Optional[float] = None
     raw_exposure_value: Optional[float] = None
@@ -36,11 +37,13 @@ class BrightnessService:
         camera_factory: Callable[[int], ExposureMeterCamera] = ExposureMeterCamera,
         set_brightness: Callable[[int, Optional[str]], None] = display.set_brightness,
         apply_night_light: Callable[[int], bool] = display.apply_night_light,
+        find_camera_users: Callable[[], list[str]] = camera_usage.applications_using_camera,
     ) -> None:
         self._settings = settings
         self._camera_factory = camera_factory
         self._set_brightness = set_brightness
         self._apply_night_light = apply_night_light
+        self._find_camera_users = find_camera_users
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -70,13 +73,31 @@ class BrightnessService:
         self._apply_night_light(0)
 
     def calibrate(self, dark: bool) -> bool:
-        """Übernimmt das aktuelle Umgebungslicht als dunklen bzw. hellen Referenzpunkt."""
-        current = self.status.exposure_value
+        """Übernimmt die letzte Messung als dunklen bzw. hellen Referenzpunkt."""
+        current = self.status.raw_exposure_value
         if current is None:
             return False
         key = "dark_exposure_value" if dark else "bright_exposure_value"
         self._settings.update(**{key: round(current, 2)})
         return True
+
+    def _measure(self, camera: ExposureMeterCamera):
+        """Eine Messung mit sofortiger Freigabe der Kamera; None, wenn sie nicht möglich ist."""
+        users = self._find_camera_users()
+        if users:
+            self._publish(state="busy", message=", ".join(users))
+            return None
+        try:
+            camera.open()
+            return camera.measure()
+        except CameraError:
+            self._publish(state="busy", message="")
+            return None
+        except Exception as error:
+            self._publish(state="error", message=str(error))
+            return None
+        finally:
+            camera.close()
 
     def _run(self) -> None:
         camera: Optional[ExposureMeterCamera] = None
@@ -84,7 +105,8 @@ class BrightnessService:
         smoother = mapping.ExposureValueSmoother()
         last_applied: Optional[int] = None
         last_night_light: Optional[int] = None
-        last_time = time.monotonic()
+        next_measurement = 0.0
+        last_tick = time.monotonic()
         try:
             while not self._stop.is_set():
                 settings = self._settings.snapshot()
@@ -92,67 +114,49 @@ class BrightnessService:
                     self._apply_night_light(settings.night_shift_percent)
                     last_night_light = settings.night_shift_percent
 
-                if camera is not None and (
-                    not settings.enabled or camera_index != settings.camera_index
-                ):
-                    camera.close()
-                    camera = None
-                    smoother.reset()
-                if not settings.enabled:
-                    self._publish(state="disabled", message="Automatik pausiert")
-                    self._wait(1.0)
-                    continue
-
-                if camera is None:
-                    try:
-                        camera = self._camera_factory(settings.camera_index)
-                        camera.open()
-                        camera_index = settings.camera_index
-                        last_time = time.monotonic()
-                    except Exception as error:
-                        if camera is not None:
-                            camera.close()
-                        camera = None
-                        self._publish(state="error", message=str(error))
-                        self._wait(RETRY_DELAY_S)
-                        continue
-
-                try:
-                    reading = camera.measure()
-                except CameraError as error:
-                    camera.close()
-                    camera = None
-                    self._publish(state="error", message=str(error))
-                    self._wait(RETRY_DELAY_S)
-                    continue
-
                 now = time.monotonic()
-                smoothed = smoother.update(
-                    reading.exposure_value, now - last_time, settings.response_time_s
-                )
-                last_time = now
-                target = round(mapping.target_brightness(smoothed, settings))
-                if mapping.should_apply(target, last_applied, settings.hysteresis_percent):
-                    try:
-                        self._set_brightness(target, settings.monitor)
-                        last_applied = target
-                    except Exception as error:
-                        self._publish(state="error", message=f"Helligkeit nicht setzbar: {error}")
-                        self._wait(RETRY_DELAY_S)
-                        continue
-                self.history.append((time.time(), smoothed, target))
-                self._publish(
-                    state="running",
-                    message="",
-                    exposure_value=smoothed,
-                    raw_exposure_value=reading.exposure_value,
-                    exposure_log2_seconds=reading.exposure_log2_seconds,
-                    target_percent=target,
-                    applied_percent=last_applied,
-                    reliable=reading.reliable,
-                    exposure_control_available=reading.exposure_control_available,
-                )
-                self._wait(settings.measure_interval_s)
+                elapsed, last_tick = now - last_tick, now
+                if not settings.enabled:
+                    smoother.reset()
+                    next_measurement = 0.0
+                    self._publish(state="disabled", message="Automatik pausiert")
+                    self._wait(TICK_S)
+                    continue
+
+                if now >= next_measurement:
+                    if camera is None or camera_index != settings.camera_index:
+                        camera = self._camera_factory(settings.camera_index)
+                        camera_index = settings.camera_index
+                    reading = self._measure(camera)
+                    if reading is None:
+                        next_measurement = time.monotonic() + RETRY_DELAY_S
+                    else:
+                        next_measurement = time.monotonic() + settings.measure_interval_s
+                        smoother.set_sample(reading.exposure_value)
+                        self._publish(
+                            state="running",
+                            message="",
+                            raw_exposure_value=reading.exposure_value,
+                            exposure_log2_seconds=reading.exposure_log2_seconds,
+                            reliable=reading.reliable,
+                            exposure_control_available=reading.exposure_control_available,
+                        )
+                    last_tick = time.monotonic()
+
+                smoothed = smoother.advance(elapsed, settings.response_time_s)
+                if smoothed is not None:
+                    target = round(mapping.target_brightness(smoothed, settings))
+                    if mapping.should_apply(target, last_applied, settings.hysteresis_percent):
+                        try:
+                            self._set_brightness(target, settings.monitor)
+                            last_applied = target
+                            if self.status.state == "error":
+                                self._publish(state="running", message="")
+                        except Exception as error:
+                            self._publish(state="error", message=f"Helligkeit nicht setzbar: {error}")
+                    self.history.append((time.time(), smoothed, target))
+                    self._publish(exposure_value=smoothed, target_percent=target, applied_percent=last_applied)
+                self._wait(TICK_S)
         finally:
             if camera is not None:
                 camera.close()

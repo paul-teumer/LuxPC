@@ -21,7 +21,7 @@ def test_out_of_range_values_are_clamped(tmp_path):
     path.write_text(json.dumps({"night_shift_percent": 500, "measure_interval_s": 0}), encoding="utf-8")
     loaded = Settings(path).snapshot()
     assert loaded.night_shift_percent == 100
-    assert loaded.measure_interval_s == 0.3
+    assert loaded.measure_interval_s == 2.0
 
 
 def test_corrupt_file_and_unknown_keys_are_ignored(tmp_path):

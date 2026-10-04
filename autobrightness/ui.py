@@ -47,8 +47,11 @@ def describe_status(status: Status) -> tuple[str, bool]:
     """(Text, ist_Warnung)."""
     if status.state == "disabled":
         return "Pausiert", False
+    if status.state == "busy":
+        users = status.message if len(status.message) <= 26 else status.message[:25] + "…"
+        return (f"Pausiert · {users}" if users else "Kamera belegt"), False
     if status.state == "error":
-        return f"{status.message} – neuer Versuch folgt", True
+        return status.message, True
     if status.state == "starting":
         return "Starte …", False
     if not status.exposure_control_available:
@@ -141,8 +144,8 @@ class SettingsWindow(customtkinter.CTk):
         self._add_slider(range_card, "brightness_offset_percent", "Versatz", -30, 30, data, lambda value: f"{int(value):+d} %", 60)
 
         behaviour = self._card("Verhalten")
-        self._add_slider(behaviour, "response_time_s", "Trägheit", 0, 30, data, lambda value: f"{value:.0f} s", 30)
-        self._add_slider(behaviour, "measure_interval_s", "Messintervall", 0.3, 10, data, lambda value: f"{value:.1f} s", 97)
+        self._add_slider(behaviour, "response_time_s", "Trägheit", 0, 120, data, lambda value: f"{value:.0f} s", 120)
+        self._add_slider(behaviour, "measure_interval_s", "Messintervall", 2, 120, data, lambda value: f"{value:.0f} s", 118)
         self._add_slider(behaviour, "hysteresis_percent", "Mindeständerung", 0, 10, data, lambda value: f"{int(value)} %", 10)
 
         monitors = [AUTO_MONITOR_LABEL] + display.list_monitors()

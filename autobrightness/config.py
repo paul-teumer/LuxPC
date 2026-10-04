@@ -20,8 +20,8 @@ class SettingsData:
     enabled: bool = True
     camera_index: int = 0
     monitor: Optional[str] = None
-    measure_interval_s: float = 1.0
-    response_time_s: float = 4.0
+    measure_interval_s: float = 10.0
+    response_time_s: float = 20.0
     hysteresis_percent: int = 2
     dark_exposure_value: float = 1.0
     bright_exposure_value: float = 8.0
@@ -34,8 +34,8 @@ class SettingsData:
 # (Minimum, Maximum) je numerischem Feld; Werte außerhalb werden begrenzt.
 LIMITS: dict[str, tuple[float, float]] = {
     "camera_index": (0, 9),
-    "measure_interval_s": (0.3, 10.0),
-    "response_time_s": (0.0, 30.0),
+    "measure_interval_s": (2.0, 300.0),
+    "response_time_s": (0.0, 300.0),
     "hysteresis_percent": (0, 10),
     "dark_exposure_value": (-4.0, 12.0),
     "bright_exposure_value": (-4.0, 12.0),
