@@ -8,7 +8,7 @@ import sys
 import pystray
 
 from .config import Settings
-from .icon import render_icon
+from .icon import render_icon, system_icon_sizes
 from .service import BrightnessService
 from .ui import SettingsWindow
 
@@ -24,6 +24,7 @@ def acquire_single_instance():
 
 
 def main() -> int:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # echte Pixelgrößen für Symbole, keine Skalierung durch Windows
     if acquire_single_instance() is None:
         return 0
 
@@ -50,7 +51,7 @@ def main() -> int:
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Beenden", lambda: window.post(quit_application)),
     )
-    tray = pystray.Icon("AutoBrightness", render_icon(64), "AutoBrightness", menu)
+    tray = pystray.Icon("AutoBrightness", render_icon(system_icon_sizes()[0]), "AutoBrightness", menu)
     tray.run_detached()
 
     if "--minimized" in sys.argv:

@@ -8,13 +8,20 @@ from __future__ import annotations
 import base64
 import io
 import math
+import ctypes
 import struct
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
+ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
+SM_CXICON = 11
+SM_CXSMICON = 49
+WM_SETICON = 0x0080
+ICON_SMALL, ICON_BIG = 0, 1
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x10
 TILE_TOP = (36, 48, 78)
 TILE_BOTTOM = (13, 19, 36)
 SUN_LIGHT = (255, 222, 128)
@@ -102,3 +109,21 @@ def write_ico(path: Path) -> None:
         directory += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(data), offset + len(payload))
         payload += data
     Path(path).write_bytes(header + directory + payload)
+
+
+def system_icon_sizes() -> tuple[int, int]:
+    """(kleines, großes) Symbol in Pixeln für die aktuelle Bildschirmskalierung."""
+    metrics = ctypes.windll.user32.GetSystemMetrics
+    return metrics(SM_CXSMICON), metrics(SM_CXICON)
+
+
+def apply_window_icon(window_handle: int, ico_path: Path) -> None:
+    """Setzt kleines (Titelleiste) und großes Symbol (Taskleiste) in exakt passender Pixelgröße aus der .ico."""
+    user32 = ctypes.windll.user32
+    user32.LoadImageW.restype = ctypes.c_void_p
+    user32.LoadImageW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    small, big = system_icon_sizes()
+    for kind, size in ((ICON_SMALL, small), (ICON_BIG, big)):
+        handle = user32.LoadImageW(None, str(ico_path), IMAGE_ICON, size, size, LR_LOADFROMFILE)
+        user32.SendMessageW(window_handle, WM_SETICON, kind, handle)

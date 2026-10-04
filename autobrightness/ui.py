@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import math
 import queue
 import tempfile
@@ -13,7 +14,7 @@ import customtkinter
 
 from . import __version__, display, startup
 from .config import Settings
-from .icon import write_ico
+from .icon import apply_window_icon, write_ico
 from .service import BrightnessService, Status
 
 FONT_FAMILY = "Segoe UI"
@@ -106,6 +107,8 @@ class SettingsWindow(customtkinter.CTk):
             icon_path = Path(folder) / "AutoBrightness.ico"
             write_ico(icon_path)
             self.iconbitmap(str(icon_path))
+            self.update_idletasks()
+            apply_window_icon(ctypes.windll.user32.GetParent(self.winfo_id()), icon_path)
 
         self._build()
         self.after(REFRESH_MS, self._refresh)
