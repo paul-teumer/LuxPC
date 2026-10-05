@@ -8,7 +8,7 @@ Made for desktop PCs with external monitors and for laptops without an ambient l
 
 ## Installation
 
-**Easiest:** [download `LuxPC.exe` from the latest release](https://github.com/paul-teumer/LuxPC/releases/latest) and double-click it. No Python needed; it runs on any Windows 10/11 computer and can be copied freely.
+**Easiest: [Download LuxPC](https://github.com/paul-teumer/LuxPC/releases/latest/download/LuxPC.exe)** and double-click it. No Python needed; it runs on any Windows 10/11 computer and can be copied freely.
 
 **Build it yourself (3 steps):**
 
